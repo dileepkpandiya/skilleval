@@ -1,0 +1,20 @@
+{
+  "name": "skilleval",
+  "version": "0.1.0",
+  "description": "Evaluate whether Claude SKILL.md files improve LLM outputs.",
+  "bin": {
+    "skilleval": "dist/cli.js"
+  },
+  "scripts": {
+    "parse-test": "ts-node src/parse-test.ts"
+  },
+  "dependencies": {
+    "js-yaml": "latest",
+    "@types/js-yaml": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "ts-node": "latest",
+    "@types/node": "latest"
+  }
+}
