@@ -159,25 +159,7 @@ MEDIUM - 2 of 3 dimensions agree
 
 LOW - dimensions are split (skill may be task-dependent)
 
-Repo structure
-text
-skilleval/
-├── src/
-│   ├── parser.ts         # SKILL.md parser
-│   ├── runner.ts         # Claude A/B eval runner
-│   ├── judge.ts          # LLM judge scoring engine
-│   ├── score-report.ts   # Terminal report formatter
-│   ├── tasks-loader.ts   # tasks.yaml loader
-│   └── cli.ts            # CLI entry point
-├── samples/
-│   ├── api-design/       # Sample skill: API design best practices
-│   ├── code-review/      # Sample skill: Code review
-│   └── test-writer/      # Sample skill: Unit test generation
-├── tasks/
-│   └── sample-tasks.yaml
-├── .env.example
-├── LICENSE               # MIT
-└── README.md
+
 Contributing
 Issues and PRs welcome. Please include a failing task example that reproduces your bug - it helps verify any fix works correctly.
 
