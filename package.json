@@ -6,11 +6,13 @@
     "skilleval": "dist/cli.js"
   },
   "scripts": {
-    "parse-test": "ts-node src/parse-test.ts"
+    "parse-test": "ts-node src/parse-test.ts",
+    "run-test": "ts-node src/run-test.ts"
   },
   "dependencies": {
     "js-yaml": "latest",
-    "@types/js-yaml": "latest"
+    "@types/js-yaml": "latest",
+    "@anthropic-ai/sdk": "latest"
   },
   "devDependencies": {
     "typescript": "latest",
