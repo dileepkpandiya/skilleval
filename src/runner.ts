@@ -29,8 +29,15 @@ export interface ABResult {
 
 type RunOutput = ABResult['withSkill'];
 
-const MODEL = 'claude-sonnet-4-6';
-const MAX_TOKENS = 1024;
+const MODEL = process.env.SKILLEVAL_DEV === 'true'
+  ? 'claude-haiku-4-5'
+  : 'claude-sonnet-4-6';
+
+const MAX_TOKENS = process.env.SKILLEVAL_DEV === 'true' ? 256 : 1024;
+
+if (process.env.SKILLEVAL_DEV === 'true') {
+  console.log('[dev mode] using claude-haiku-4-5 + max_tokens:256 - ~10x cheaper for testing');
+}
 
 export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string): Promise<ABResult[]> {
   const client = new Anthropic({ apiKey });
