@@ -10,21 +10,26 @@ export interface Task {
 export interface ABResult {
   taskId: string;
   prompt: string;
+  context?: string;
   withSkill: {
     output: string;
     tokensUsed: number;
+    inputTokens: number;
+    outputTokens: number;
     latencyMs: number;
   };
   withoutSkill: {
     output: string;
     tokensUsed: number;
+    inputTokens: number;
+    outputTokens: number;
     latencyMs: number;
   };
 }
 
 type RunOutput = ABResult['withSkill'];
 
-const MODEL = 'claude-opus-4-5';
+const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;
 
 export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string): Promise<ABResult[]> {
@@ -43,6 +48,7 @@ export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string): 
     results.push({
       taskId: task.id,
       prompt: task.prompt,
+      context: task.context,
       withSkill,
       withoutSkill,
     });
@@ -75,6 +81,8 @@ async function runClaudeCall(
     return {
       output: extractText(message.content),
       tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+      inputTokens: message.usage.input_tokens,
+      outputTokens: message.usage.output_tokens,
       latencyMs: Date.now() - start,
     };
   } catch (error) {
@@ -83,6 +91,8 @@ async function runClaudeCall(
     return {
       output: `[ERROR: ${detail}]`,
       tokensUsed: 0,
+      inputTokens: 0,
+      outputTokens: 0,
       latencyMs: Date.now() - start,
     };
   }
