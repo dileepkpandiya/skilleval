@@ -7,12 +7,15 @@
   },
   "scripts": {
     "parse-test": "ts-node src/parse-test.ts",
-    "run-test": "ts-node src/run-test.ts"
+    "run-test": "ts-node src/run-test.ts",
+    "judge-test": "ts-node src/judge-test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "js-yaml": "latest",
     "@types/js-yaml": "latest",
-    "@anthropic-ai/sdk": "latest"
+    "@anthropic-ai/sdk": "latest",
+    "@google/generative-ai": "latest"
   },
   "devDependencies": {
     "typescript": "latest",
