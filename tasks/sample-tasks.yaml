@@ -1,0 +1,21 @@
+tasks:
+  - id: task-001
+    skillTarget: code-review
+    prompt: "Review this function for bugs and style issues: function parseUser(input: string) { const data = JSON.parse(input); return { id: data.id, email: data.email.toLowerCase() }; }"
+    context: "This is a Node.js codebase using TypeScript strict mode. The function receives request bodies from an HTTP API."
+  - id: task-002
+    skillTarget: code-review
+    prompt: "Review this pull request change: async function saveOrder(db, order) { db.orders.insert(order); return { ok: true, id: order.id }; }"
+    context: "The repository uses async database calls, strict TypeScript, and returns API responses consumed by a frontend."
+  - id: task-003
+    skillTarget: api-design
+    prompt: "Design an API endpoint for bulk inviting users to a workspace, including request and response shapes."
+    context: "The product has workspaces, email invitations, role assignment, and audit logging."
+  - id: task-004
+    skillTarget: api-design
+    prompt: "Review this endpoint design: POST /updateUser with body { userId, changes }. Suggest improvements for long-term compatibility."
+    context: "This is a public REST API used by third-party integrations."
+  - id: task-005
+    skillTarget: test-writer
+    prompt: "Write unit tests for a function that validates password reset tokens, including expired, reused, and missing-token cases."
+    context: "The project uses Jest with TypeScript and avoids network or real-time dependencies in unit tests."
