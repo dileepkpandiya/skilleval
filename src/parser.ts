@@ -22,7 +22,14 @@ type Frontmatter = {
 
 export function parseSkillFile(filePath: string): ParsedSkill {
   const rawPath = resolve(filePath);
-  const contents = readFileSync(rawPath, 'utf8');
+  let contents: string;
+
+  try {
+    contents = readFileSync(rawPath, 'utf8');
+  } catch (err) {
+    console.error(`Error: SKILL.md not found at ${rawPath}`);
+    process.exit(1);
+  }
 
   if (!contents.startsWith('---')) {
     throw new Error(`SKILL.md is missing YAML frontmatter: ${rawPath}`);
@@ -86,4 +93,8 @@ function optionalStringArray(value: unknown, field: string, rawPath: string): st
     throw new Error(`Invalid frontmatter in ${rawPath}: '${field}' must be an array of strings when provided`);
   }
   return value;
+}
+
+if (require.main === module) {
+  parseSkillFile(process.argv[2]);
 }
