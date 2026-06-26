@@ -58,7 +58,7 @@ type GeminiModel = {
 };
 
 type GoogleGenerativeAIConstructor = new (apiKey: string) => {
-  getGenerativeModel(options: { model: string }): GeminiModel;
+  getGenerativeModel(options: { model: string; generationConfig?: { maxOutputTokens: number } }): GeminiModel;
 };
 
 interface UsageTotals {
@@ -66,7 +66,9 @@ interface UsageTotals {
   judgeOutputTokens: number;
 }
 
-const RUNNER_MODEL = 'claude-sonnet-4-6';
+const RUNNER_MODEL = process.env.SKILLEVAL_DEV === 'true'
+  ? 'claude-haiku-4-5'
+  : 'claude-sonnet-4-6';
 const JUDGE_MODEL = 'gemini-3.5-flash';
 const MAX_ATTEMPTS = 3;
 
@@ -82,7 +84,10 @@ export async function judgeResults(
 
   const { GoogleGenerativeAI } = loadGoogleGenerativeAI();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: JUDGE_MODEL });
+  const model = genAI.getGenerativeModel({
+    model: JUDGE_MODEL,
+    generationConfig: { maxOutputTokens: 512 },
+  });
   const judged: JudgeResult[] = [];
   const usage: UsageTotals = { judgeInputTokens: 0, judgeOutputTokens: 0 };
 
