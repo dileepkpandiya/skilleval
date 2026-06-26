@@ -12,14 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "js-yaml": "latest",
+    "@anthropic-ai/sdk": "^0.106.0",
+    "@google/generative-ai": "latest",
     "@types/js-yaml": "latest",
-    "@anthropic-ai/sdk": "latest",
-    "@google/generative-ai": "latest"
+    "js-yaml": "latest"
   },
   "devDependencies": {
-    "typescript": "latest",
+    "@types/node": "latest",
     "ts-node": "latest",
-    "@types/node": "latest"
+    "typescript": "latest"
   }
 }
