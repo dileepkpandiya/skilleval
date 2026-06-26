@@ -13,7 +13,7 @@ async function main(): Promise<void> {
     throw new Error('Missing GOOGLE_API_KEY.');
   }
 
-  const skill = parseSkillFile(join(process.cwd(), 'samples/code-review/SKILL.md'));
+  const skill = parseSkillFile(join(process.cwd(), 'samples/test-writer/SKILL.md'));
   const tasks = loadTasksForSkill(join(process.cwd(), 'tasks/sample-tasks.yaml'), skill.name).slice(0, 3);
   const results = await runAB(skill, tasks, anthropicApiKey);
   await judgeResults(skill, results);

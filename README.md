@@ -8,7 +8,7 @@ text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   skilleval results · api-design · 5 tasks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Skill effectiveness:   +2.4 / 10
+  Skill effectiveness:   +2.4 / 3
   Tasks improved:        4 / 5  (80%)
   Tasks hurt:            0 / 5  (0%)
   Confidence:            HIGH

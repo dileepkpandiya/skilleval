@@ -32,16 +32,11 @@ interface JudgeOptions {
   print?: boolean;
 }
 
-interface GeminiScore {
-  relevance: number;
-  precision: number;
-  expertise: number;
-}
-
 interface GeminiJudgement {
-  output_a: GeminiScore;
-  output_b: GeminiScore;
-  reasoning: string;
+  winner: 'A' | 'B';
+  score: number;
+  confidence: 'HIGH' | 'MED' | 'LOW';
+  reason: string;
 }
 
 
@@ -58,7 +53,7 @@ type GeminiModel = {
 };
 
 type GoogleGenerativeAIConstructor = new (apiKey: string) => {
-  getGenerativeModel(options: { model: string; generationConfig?: { maxOutputTokens: number } }): GeminiModel;
+  getGenerativeModel(options: { model: string; generationConfig?: { maxOutputTokens: number; temperature: number } }): GeminiModel;
 };
 
 interface UsageTotals {
@@ -86,33 +81,29 @@ export async function judgeResults(
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
     model: JUDGE_MODEL,
-    generationConfig: { maxOutputTokens: 512 },
+    generationConfig: {
+      maxOutputTokens: 1024,
+      temperature: 0.1,
+    },
   });
   const judged: JudgeResult[] = [];
   const usage: UsageTotals = { judgeInputTokens: 0, judgeOutputTokens: 0 };
 
   for (const result of results) {
-    const swapped = Math.random() < 0.5;
-    const outputA = swapped ? result.withoutSkill.output : result.withSkill.output;
-    const outputB = swapped ? result.withSkill.output : result.withoutSkill.output;
-    const prompt = buildJudgePrompt(result.prompt, result.context ?? '', outputA, outputB);
+    const prompt = buildJudgePrompt(result.prompt, result.context ?? '', result.withoutSkill.output, result.withSkill.output);
 
     const judgement = await judgeOneTask(model, result.taskId, prompt, usage);
     if (!judgement) continue;
 
-    const withScores = swapped ? judgement.output_b : judgement.output_a;
-    const withoutScores = swapped ? judgement.output_a : judgement.output_b;
-    const withSkillScore = averageScore(withScores);
-    const withoutSkillScore = averageScore(withoutScores);
-    const diff = round1(withSkillScore - withoutSkillScore);
+    const diff = round1(judgement.winner === 'B' ? judgement.score : -judgement.score);
 
     judged.push({
       taskId: result.taskId,
-      withSkillScore,
-      withoutSkillScore,
+      withSkillScore: judgement.winner === 'B' ? judgement.score : 0,
+      withoutSkillScore: judgement.winner === 'A' ? judgement.score : 0,
       diff,
-      confidence: confidenceFor(withScores, withoutScores),
-      reasoning: judgement.reasoning,
+      confidence: judgement.confidence,
+      reasoning: judgement.reason,
     });
   }
 
@@ -128,10 +119,13 @@ function loadGoogleGenerativeAI(): { GoogleGenerativeAI: GoogleGenerativeAIConst
 }
 
 function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA: string, outputB: string): string {
-  return `You are an expert evaluator assessing two AI responses to the same task.
+  return `You are an expert evaluator comparing two code review responses.
 
-Task: ${taskPrompt}
-Context: ${taskContext}
+Output A was generated WITHOUT a skill/system prompt.
+Output B was generated WITH a skill/system prompt.
+
+Task prompt: ${taskPrompt}
+Task context: ${taskContext}
 
 Output A:
 ${outputA}
@@ -139,17 +133,21 @@ ${outputA}
 Output B:
 ${outputB}
 
-Score each output on these 3 dimensions (1-10 each):
-- Relevance: How directly and completely it addresses the task
-- Precision: How specific and actionable it is vs vague and generic  
-- Expertise: Whether it demonstrates domain knowledge and nuanced understanding
+A good code review:
+- Identifies real bugs that can be demonstrated from the code shown
+- Explains the risk clearly so a maintainer can act
+- Does NOT rewrite the code unless the current design is fundamentally broken
+- Only reports findings directly verifiable from the code shown
 
-Respond with ONLY valid JSON, no explanation:
-{
-  "output_a": { "relevance": 0, "precision": 0, "expertise": 0 },
-  "output_b": { "relevance": 0, "precision": 0, "expertise": 0 },
-  "reasoning": "one sentence explaining the key difference"
-}`;
+Compare only on review quality: correctness of findings, depth of analysis, and actionability.
+Penalize hallucinated findings (issues not present in the code) and unnecessary rewrites.
+
+CRITICAL: Respond with ONLY a raw JSON object. No markdown. No code fences. No text before or after.
+{"winner":"A","score":1.5,"confidence":"HIGH","reason":"One sentence explaining why."}
+
+confidence must be exactly one of: "HIGH", "MED", "LOW"
+score must be between 0.0 and 3.0
+winner must be "A" or "B"`;
 }
 
 async function judgeOneTask(
@@ -175,8 +173,15 @@ async function judgeOneTask(
 
 function parseJudgement(text: string): GeminiJudgement | undefined {
   try {
-    const parsed = JSON.parse(text) as GeminiJudgement;
-    if (!isScore(parsed.output_a) || !isScore(parsed.output_b) || typeof parsed.reasoning !== 'string') {
+    const rawText = text;
+    // Strip markdown code fences if present.
+    const cleaned = rawText
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    const parsed = JSON.parse(cleaned) as GeminiJudgement;
+    if (!isJudgement(parsed)) {
       return undefined;
     }
     return parsed;
@@ -185,30 +190,18 @@ function parseJudgement(text: string): GeminiJudgement | undefined {
   }
 }
 
-function isScore(value: unknown): value is GeminiScore {
+function isJudgement(value: unknown): value is GeminiJudgement {
   if (value === null || typeof value !== 'object') return false;
-  const score = value as Record<string, unknown>;
-  return ['relevance', 'precision', 'expertise'].every((key) => (
-    typeof score[key] === 'number' && Number.isFinite(score[key]) && score[key] >= 1 && score[key] <= 10
-  ));
-}
-
-function averageScore(score: GeminiScore): number {
-  return round1((score.relevance + score.precision + score.expertise) / 3);
-}
-
-function confidenceFor(withScores: GeminiScore, withoutScores: GeminiScore): 'HIGH' | 'MED' | 'LOW' {
-  const agreements = [
-    Math.sign(withScores.relevance - withoutScores.relevance),
-    Math.sign(withScores.precision - withoutScores.precision),
-    Math.sign(withScores.expertise - withoutScores.expertise),
-  ];
-  const positive = agreements.filter((value) => value > 0).length;
-  const negative = agreements.filter((value) => value < 0).length;
-  const strongest = Math.max(positive, negative);
-  if (strongest === 3) return 'HIGH';
-  if (strongest === 2) return 'MED';
-  return 'LOW';
+  const judgement = value as Record<string, unknown>;
+  return (
+    (judgement.winner === 'A' || judgement.winner === 'B')
+    && typeof judgement.score === 'number'
+    && Number.isFinite(judgement.score)
+    && judgement.score >= 0
+    && judgement.score <= 3
+    && (judgement.confidence === 'HIGH' || judgement.confidence === 'MED' || judgement.confidence === 'LOW')
+    && typeof judgement.reason === 'string'
+  );
 }
 
 function buildReport(
@@ -261,7 +254,7 @@ export function printEvalReport(report: EvalReport): void {
   console.log(line);
   console.log(`  skilleval results - ${report.skillName} - ${report.totalTasks} tasks`);
   console.log(line);
-  console.log(`  Skill effectiveness:   ${formatDiff(report.avgDiff)} / 10`);
+  console.log(`  Skill effectiveness:   ${formatDiff(report.avgDiff)} / 3`);
   console.log(`  Tasks improved:        ${report.tasksImproved} / ${report.totalTasks}  (${improvedPct}%)`);
   console.log(`  Tasks hurt:            ${report.tasksHurt} / ${report.totalTasks}  (${hurtPct}%)`);
   console.log(`  Confidence:            ${report.overallConfidence}`);

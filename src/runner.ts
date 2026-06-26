@@ -33,10 +33,11 @@ const MODEL = process.env.SKILLEVAL_DEV === 'true'
   ? 'claude-haiku-4-5'
   : 'claude-sonnet-4-6';
 
-const MAX_TOKENS = process.env.SKILLEVAL_DEV === 'true' ? 512 : 1024;
+const MAX_TOKENS = process.env.SKILLEVAL_DEV === 'true' ? 1024 : 2048;
 
 if (process.env.SKILLEVAL_DEV === 'true') {
-  console.log('[dev mode] using claude-haiku-4-5 + max_tokens:512 - ~10x cheaper for testing');
+  console.log('[dev mode] using claude-haiku-4-5 - ~10x cheaper for testing');
+  console.log('[dev mode] max_tokens:', MAX_TOKENS);
 }
 
 export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string): Promise<ABResult[]> {

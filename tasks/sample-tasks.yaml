@@ -5,8 +5,8 @@ tasks:
     context: "This is a Node.js codebase using TypeScript strict mode. The function receives request bodies from an HTTP API."
   - id: task-002
     skillTarget: code-review
-    prompt: "Review this pull request change: async function saveOrder(db, order) { db.orders.insert(order); return { ok: true, id: order.id }; }"
-    context: "The repository uses async database calls, strict TypeScript, and returns API responses consumed by a frontend."
+    prompt: "Review this pull request change: async function saveOrder(db: Database, order: Order) { db.orders.insert(order); return { ok: true, id: order.id };"
+    context: "The repository uses async database calls, strict TypeScript, and returns API responses consumed by a frontend. The Database and Order types are defined elsewhere in the codebase."
   - id: task-003
     skillTarget: api-design
     prompt: "Design an API endpoint for bulk inviting users to a workspace, including request and response shapes."
