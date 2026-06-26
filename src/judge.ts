@@ -67,7 +67,7 @@ interface UsageTotals {
 }
 
 const RUNNER_MODEL = 'claude-sonnet-4-6';
-const JUDGE_MODEL = 'gemini-2.0-flash';
+const JUDGE_MODEL = 'gemini-3.5-flash';
 const MAX_ATTEMPTS = 3;
 
 export async function judgeResults(
