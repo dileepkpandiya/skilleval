@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { MODELS } from './config';
 import type { ParsedSkill } from './parser';
 
 export interface Task {
@@ -29,9 +30,13 @@ export interface ABResult {
 
 type RunOutput = ABResult['withSkill'];
 
+interface RunOptions {
+  model?: string;
+}
+
 const MODEL = process.env.SKILLEVAL_DEV === 'true'
-  ? 'claude-haiku-4-5'
-  : 'claude-sonnet-4-6';
+  ? MODELS.runner.dev
+  : MODELS.runner.default;
 
 const MAX_TOKENS = process.env.SKILLEVAL_DEV === 'true' ? 1024 : 2048;
 
@@ -40,17 +45,18 @@ if (process.env.SKILLEVAL_DEV === 'true') {
   console.log('[dev mode] max_tokens:', MAX_TOKENS);
 }
 
-export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string): Promise<ABResult[]> {
+export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string, options: RunOptions = {}): Promise<ABResult[]> {
   const client = new Anthropic({ apiKey });
   const results: ABResult[] = [];
+  const model = options.model ?? MODEL;
 
   for (const task of tasks) {
     const context = task.context ?? '';
     const withSkillSystem = `[SKILL: ${skill.name}]\n\n${skill.instructionBody}\n\n---\n\n${context}`;
 
     const [withSkill, withoutSkill] = await Promise.all([
-      runClaudeCall(client, task, withSkillSystem, 'with skill'),
-      runClaudeCall(client, task, context, 'without skill'),
+      runClaudeCall(client, task, withSkillSystem, 'with skill', model),
+      runClaudeCall(client, task, context, 'without skill', model),
     ]);
 
     results.push({
@@ -70,12 +76,13 @@ async function runClaudeCall(
   task: Task,
   system: string,
   label: 'with skill' | 'without skill',
+  model: string,
 ): Promise<RunOutput> {
   const start = Date.now();
 
   try {
     const message = await client.messages.create({
-      model: MODEL,
+      model,
       max_tokens: MAX_TOKENS,
       system,
       messages: [

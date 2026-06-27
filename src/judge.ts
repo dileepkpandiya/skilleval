@@ -1,4 +1,6 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { createRequire } from 'node:module';
+import { MODELS } from './config';
 import type { ParsedSkill } from './parser';
 import type { ABResult } from './runner';
 
@@ -25,8 +27,15 @@ export interface EvalReport {
   estimatedCost: number;
 }
 
+export type JudgeProvider = 'gemini' | 'anthropic' | 'openai';
+
 interface JudgeOptions {
   googleApiKey?: string;
+  anthropicApiKey?: string;
+  openAIApiKey?: string;
+  judgeModel?: string;
+  judgeProvider?: JudgeProvider;
+  runnerModel?: string;
   runnerInputTokens?: number;
   runnerOutputTokens?: number;
   print?: boolean;
@@ -62,9 +71,9 @@ interface UsageTotals {
 }
 
 const RUNNER_MODEL = process.env.SKILLEVAL_DEV === 'true'
-  ? 'claude-haiku-4-5'
-  : 'claude-sonnet-4-6';
-const JUDGE_MODEL = 'gemini-3.5-flash';
+  ? MODELS.runner.dev
+  : MODELS.runner.default;
+const JUDGE_MODEL = MODELS.judge.default;
 const MAX_ATTEMPTS = 3;
 
 export async function judgeResults(
@@ -72,42 +81,36 @@ export async function judgeResults(
   results: ABResult[],
   options: JudgeOptions = {},
 ): Promise<EvalReport> {
-  const apiKey = options.googleApiKey ?? process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing GOOGLE_API_KEY.');
-  }
-
-  const { GoogleGenerativeAI } = loadGoogleGenerativeAI();
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: JUDGE_MODEL,
-    generationConfig: {
-      maxOutputTokens: 1024,
-      temperature: 0.1,
-    },
-  });
+  const provider = options.judgeProvider ?? 'gemini';
+  const judgeModel = options.judgeModel ?? (provider === 'anthropic' ? MODELS.judge.fallback : JUDGE_MODEL);
+  const generate = createJudgeGenerator(provider, judgeModel, options);
   const judged: JudgeResult[] = [];
   const usage: UsageTotals = { judgeInputTokens: 0, judgeOutputTokens: 0 };
 
   for (const result of results) {
-    const prompt = buildJudgePrompt(result.prompt, result.context ?? '', result.withoutSkill.output, result.withSkill.output);
+    const swapped = Math.random() < 0.5;
+    const outputA = swapped ? result.withSkill.output : result.withoutSkill.output;
+    const outputB = swapped ? result.withoutSkill.output : result.withSkill.output;
+    const prompt = buildJudgePrompt(result.prompt, result.context ?? '', outputA, outputB);
 
-    const judgement = await judgeOneTask(model, result.taskId, prompt, usage);
+    const judgement = await judgeOneTask(generate, result.taskId, prompt, usage);
     if (!judgement) continue;
 
-    const diff = round1(judgement.winner === 'B' ? judgement.score : -judgement.score);
+    const winnerIsWithSkill = swapped ? judgement.winner === 'A' : judgement.winner === 'B';
+    const { withSkillScore, withoutSkillScore } = scoresForJudgement(judgement.score, winnerIsWithSkill);
+    const diff = round1(withSkillScore - withoutSkillScore);
 
     judged.push({
       taskId: result.taskId,
-      withSkillScore: judgement.winner === 'B' ? judgement.score : 0,
-      withoutSkillScore: judgement.winner === 'A' ? judgement.score : 0,
+      withSkillScore,
+      withoutSkillScore,
       diff,
       confidence: judgement.confidence,
       reasoning: judgement.reason,
     });
   }
 
-  const report = buildReport(skill.name, results, judged, usage, options);
+  const report = buildReport(skill.name, results, judged, usage, { ...options, judgeModel });
   if (options.print ?? true) printEvalReport(report);
   return report;
 }
@@ -118,11 +121,88 @@ function loadGoogleGenerativeAI(): { GoogleGenerativeAI: GoogleGenerativeAIConst
   return require('@google/generative-ai') as { GoogleGenerativeAI: GoogleGenerativeAIConstructor };
 }
 
+type JudgeGenerator = (prompt: string, usage: UsageTotals) => Promise<string>;
+
+function createJudgeGenerator(provider: JudgeProvider, judgeModel: string, options: JudgeOptions): JudgeGenerator {
+  if (provider === 'gemini') {
+    const apiKey = options.googleApiKey ?? process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error('Missing GOOGLE_API_KEY.');
+    }
+
+    const { GoogleGenerativeAI } = loadGoogleGenerativeAI();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: judgeModel,
+      generationConfig: {
+        maxOutputTokens: 1024,
+        temperature: 0.1,
+      },
+    });
+
+    return async (prompt, usage) => {
+      const response = await model.generateContent(prompt);
+      const metadata = response.response.usageMetadata;
+      const text = response.response.text().trim();
+      usage.judgeInputTokens += metadata?.promptTokenCount ?? estimateTokens(prompt);
+      usage.judgeOutputTokens += metadata?.candidatesTokenCount ?? estimateTokens(text);
+      return text;
+    };
+  }
+
+  if (provider === 'anthropic') {
+    const apiKey = options.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error('Missing ANTHROPIC_API_KEY.');
+    }
+    const client = new Anthropic({ apiKey });
+
+    return async (prompt, usage) => {
+      const message = await client.messages.create({
+        model: judgeModel,
+        max_tokens: 1024,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = extractAnthropicText(message.content).trim();
+      usage.judgeInputTokens += message.usage.input_tokens;
+      usage.judgeOutputTokens += message.usage.output_tokens;
+      return text;
+    };
+  }
+
+  return async (prompt, usage) => {
+    const apiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Missing OPENAI_API_KEY.');
+    }
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: judgeModel,
+        temperature: 0.1,
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    const body = await response.json() as OpenAIChatResponse;
+    if (!response.ok) {
+      throw new Error(`OpenAI judge request failed: ${JSON.stringify(body)}`);
+    }
+    const text = body.choices?.[0]?.message?.content?.trim() ?? '';
+    usage.judgeInputTokens += body.usage?.prompt_tokens ?? estimateTokens(prompt);
+    usage.judgeOutputTokens += body.usage?.completion_tokens ?? estimateTokens(text);
+    return text;
+  };
+}
+
 function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA: string, outputB: string): string {
   return `You are an expert evaluator comparing two code review responses.
-
-Output A was generated WITHOUT a skill/system prompt.
-Output B was generated WITH a skill/system prompt.
 
 Task prompt: ${taskPrompt}
 Task context: ${taskContext}
@@ -150,19 +230,24 @@ score must be between 0.0 and 3.0
 winner must be "A" or "B"`;
 }
 
+function scoresForJudgement(score: number, winnerIsWithSkill: boolean): { withSkillScore: number; withoutSkillScore: number } {
+  const clamped = Math.max(0, Math.min(3, score));
+  const winnerScore = round1((3 + clamped) / 2);
+  const loserScore = round1((3 - clamped) / 2);
+
+  return winnerIsWithSkill
+    ? { withSkillScore: winnerScore, withoutSkillScore: loserScore }
+    : { withSkillScore: loserScore, withoutSkillScore: winnerScore };
+}
+
 async function judgeOneTask(
-  model: GeminiModel,
+  generate: JudgeGenerator,
   taskId: string,
   prompt: string,
   usage: UsageTotals,
 ): Promise<GeminiJudgement | undefined> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const response = await model.generateContent(prompt);
-    const metadata = response.response.usageMetadata;
-    usage.judgeInputTokens += metadata?.promptTokenCount ?? estimateTokens(prompt);
-    const text = response.response.text().trim();
-    usage.judgeOutputTokens += metadata?.candidatesTokenCount ?? estimateTokens(text);
-
+    const text = await generate(prompt, usage);
     const parsed = parseJudgement(text);
     if (parsed) return parsed;
   }
@@ -222,8 +307,8 @@ function buildReport(
 
   return {
     skillName,
-    model: RUNNER_MODEL,
-    judgeModel: JUDGE_MODEL,
+    model: options.runnerModel ?? RUNNER_MODEL,
+    judgeModel: options.judgeModel ?? JUDGE_MODEL,
     totalTasks: judged.length,
     avgDiff,
     tasksImproved,
@@ -266,6 +351,21 @@ export function printEvalReport(report: EvalReport): void {
   console.log(`  Runner: ${report.model} | Judge: ${report.judgeModel}`);
   console.log(`  Estimated API cost this run: $${report.estimatedCost.toFixed(3)}`);
   console.log(line);
+}
+
+function extractAnthropicText(content: Anthropic.Messages.Message['content']): string {
+  return content
+    .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
+}
+
+interface OpenAIChatResponse {
+  choices?: Array<{ message?: { content?: string } }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
 }
 
 function estimateTokens(text: string): number {

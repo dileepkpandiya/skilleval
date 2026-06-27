@@ -1,69 +1,103 @@
 # skilleval
 
-Know if your Claude SKILL.md files actually improve outputs - before your users find out they don't.
+Know if your Claude SKILL.md files actually improve outputs before your users find out they do not.
 
-bash
+```bash
 npx skilleval ./my-skill --tasks ./tasks.yaml
-text
+```
+
+```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  skilleval results · api-design · 5 tasks
+  skilleval results - api-design - 5 tasks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Skill effectiveness:   +2.4 / 3
   Tasks improved:        4 / 5  (80%)
   Tasks hurt:            0 / 5  (0%)
   Confidence:            HIGH
 
-  task-001  +3.1  HIGH  ✓ Added versioning guidance missing without skill
-  task-002  +1.8  HIGH  ✓ Improved precision on error response format
-  task-003  +2.9  HIGH  ✓ Surfaced idempotency pattern not mentioned otherwise
-  task-004  +1.6  MED   ✓ Minor improvement on authentication flow
-  task-005  +2.6  HIGH  ✓ Correct status code recommendations with skill
+  task-001  +3.0  HIGH  Added versioning guidance missing without skill
+  task-002  +1.8  HIGH  Improved precision on error response format
+  task-003  +2.9  HIGH  Surfaced idempotency pattern not mentioned otherwise
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Runner: claude-sonnet-4-6 | Judge: gemini-3.5-flash
   Estimated API cost this run: $0.018
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Why
-You install a community SKILL.md. Claude's responses feel better - but is it the skill, or just the prompt? You have no way to know.
+```
 
-You can't eyeball 50 outputs and call it a benchmark
+## Why
 
-Skills that trigger inconsistently burn tokens without improving anything
+You install a community SKILL.md. Claude's responses feel better, but is it the skill or just the prompt?
 
-When Anthropic updates a model, your skill may silently stop working
+You cannot eyeball 50 outputs and call it a benchmark. Skills that trigger inconsistently burn tokens without improving anything. When Anthropic updates a model, your skill may silently stop working.
 
-skilleval gives you a repeatable, objective score for any SKILL.md file in under 2 minutes.
+skilleval gives you a repeatable score for any SKILL.md file in under 2 minutes.
 
-How it works
-text
-1. Parse      →  reads your SKILL.md frontmatter + instruction body
-2. A/B Run    →  sends each test task to Claude twice:
-                   (a) with your skill injected into the system prompt
-                   (b) without your skill
-3. Judge      →  a blind LLM judge scores both outputs on 3 dimensions:
-                   Relevance · Precision · Expertise
-4. Report     →  diff score, per-task breakdown, confidence rating
-The judge is blind - it doesn't know which output used the skill. This eliminates order bias and position bias from the scoring.
+## How it works
 
-Quickstart
+```text
+1. Parse      -> reads your SKILL.md frontmatter + instruction body
+2. A/B Run    -> sends each test task to Claude twice:
+                 (a) with your skill injected into the system prompt
+                 (b) without your skill
+3. Judge      -> a blind LLM judge compares the two outputs
+4. Report     -> diff score, per-task breakdown, confidence rating
+```
+
+The judge is blind. It does not know which output used the skill, and output order is randomized to reduce position bias.
+
+Default models:
+- Runner: `claude-sonnet-4-6`
+- Judge: `gemini-3.5-flash`
+
+## Quickstart
+
 Install globally:
 
-bash
+```bash
 npm install -g skilleval
+```
+
 Or run without installing:
 
-bash
+```bash
 npx skilleval ./my-skill --tasks ./tasks.yaml
-Set your API key:
+```
 
-bash
-export ANTHROPIC_API_KEY=your-key-here
-Run against a sample skill (included in this repo):
+Run against a sample skill included in this repo:
 
-bash
+```bash
 skilleval ./samples/api-design --tasks ./tasks/sample-tasks.yaml
-Writing test tasks
-Create a tasks.yaml file in your skill directory:
+```
 
-text
+## Setup
+
+skilleval needs two API keys:
+
+Runner (required - must be Claude, skills are written for Claude):
+
+```bash
+export ANTHROPIC_API_KEY=your-anthropic-key
+```
+
+Judge (default - 10x cheaper than Claude for structured scoring):
+
+```bash
+export GOOGLE_API_KEY=your-google-key
+```
+
+Get a free key at: https://aistudio.google.com
+
+Using Claude as judge instead (no Google key needed):
+
+```bash
+skilleval ./my-skill --judge-provider anthropic --judge-model claude-haiku-4-5
+```
+
+## Writing test tasks
+
+Create a `tasks.yaml` file in your skill directory:
+
+```yaml
 tasks:
   - id: task-001
     prompt: "Design a REST endpoint for paginating user records"
@@ -75,18 +109,18 @@ tasks:
 
   - id: task-003
     prompt: "How should I version a breaking API change without deprecating v1 immediately?"
+    context: ""
+```
+
 Tips for writing good tasks:
+- Match prompts to your skill's stated domain. Generic prompts that any LLM answers equally well produce noisy scores.
+- Include context to simulate realistic usage conditions.
+- Aim for 5-10 tasks for a reliable signal. 3 is minimum, 15+ is thorough.
+- Mix easy and hard prompts. If every task scores +3, your rubric may be too coarse.
 
-Match prompts to your skill's stated domain - generic prompts that any LLM answers equally well produce noisy scores
+## Options
 
-Include context to simulate realistic usage conditions
-
-Aim for 5–10 tasks for a reliable signal (3 is minimum, 15+ is thorough)
-
-Mix easy and hard prompts - if every task scores +3, your rubric may be too coarse
-
-Options
-text
+```text
 Usage: skilleval <skill-path> [options]
 
 Arguments:
@@ -95,37 +129,44 @@ Arguments:
 Options:
   -t, --tasks <path>      Path to tasks YAML file
                           (default: tasks.yaml inside skill directory)
-  -m, --model <model>     Claude model for A/B runs
-                          (default: claude-opus-4-5)
-  --judge-model <model>   Claude model for the LLM judge
-                          (default: claude-haiku-4-5)
-  --cost                  Show estimated API cost before running
-  --json                  Output results as JSON
+  -m, --model <model>     Claude model for A/B runner
+                          (default: claude-sonnet-4-6)
+  --judge-model <model>   Model for the LLM judge
+                          (default: gemini-3.5-flash)
+  --judge-provider <p>    Judge provider: gemini | anthropic | openai
+                          (default: gemini)
+  --cost                  Estimate API cost before running, ask confirmation
+  --json                  Output results as JSON to stdout
   --init                  Scaffold a new skill directory with templates
   -h, --help              Show help
+```
+
 Scaffold a new skill:
 
-bash
+```bash
 skilleval --init ./my-new-skill
-# Creates my-new-skill/SKILL.md and my-new-skill/tasks.yaml from templates
+```
+
 Get JSON output for CI pipelines:
 
-bash
+```bash
 skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
-Cheaper runs during development (haiku for both eval and judge):
+```
 
-bash
-skilleval ./my-skill --model claude-haiku-4-5 --judge-model claude-haiku-4-5
-Use in CI (GitHub Actions)
-text
-# .github/workflows/skill-eval.yml
+Estimate cost before running:
+
+```bash
+skilleval ./my-skill --cost
+```
+
+## Use in CI
+
+```yaml
 name: Evaluate Skills
-
 on:
   pull_request:
     paths:
       - '**/SKILL.md'
-
 jobs:
   eval:
     runs-on: ubuntu-latest
@@ -138,29 +179,26 @@ jobs:
       - run: skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       - name: Fail if skill score is negative
-        run: node -e "const r=require('./results.json'); if(r.diff < 0) process.exit(1)"
-Scoring dimensions
-The LLM judge scores each output on:
+        run: node -e "const r=require('./results.json'); if(r.avgDiff < 0) process.exit(1)"
+```
 
-Dimension	What it measures
-Relevance	How directly and completely the output addresses the task
-Precision	Whether the output is specific and actionable vs vague and generic
-Expertise	Whether the output demonstrates domain knowledge and nuanced understanding
-Each dimension is scored 1–10. The final diff is:
+## Scoring
 
-text
-diff = avg(withSkill scores) - avg(withoutSkill scores)
+The LLM judge compares the skill and non-skill outputs on correctness, depth, and adherence to task context. It chooses a winner and a margin from 0.0 to 3.0.
+
+```text
+diff = withSkillScore - withoutSkillScore
+```
+
 Confidence ratings:
+- HIGH - the judge is confident in the winner
+- MED - useful signal, but review task details
+- LOW - weak signal; the skill may be task-dependent
 
-HIGH - all 3 dimensions agree on direction
+## Contributing
 
-MEDIUM - 2 of 3 dimensions agree
+Issues and PRs welcome. Please include a SKILL.md + tasks.yaml that reproduces the issue.
 
-LOW - dimensions are split (skill may be task-dependent)
-
-
-Contributing
-Issues and PRs welcome. Please include a failing task example that reproduces your bug - it helps verify any fix works correctly.
-
-MIT License · Built by @dileepkpandiya
+MIT License - Built by @dileepkpandiya

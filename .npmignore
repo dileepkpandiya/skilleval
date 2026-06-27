@@ -1,0 +1,5 @@
+src/judge-test.ts
+src/parse-test.ts
+src/run-test.ts
+test-skill/
+*.tgz

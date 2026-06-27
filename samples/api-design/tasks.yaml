@@ -1,0 +1,10 @@
+tasks:
+  - id: task-001
+    prompt: "Design an API endpoint for bulk inviting users to a workspace, including request and response shapes."
+    context: "The product has workspaces, email invitations, role assignment, and audit logging."
+  - id: task-002
+    prompt: "Review this endpoint design: POST /updateUser with body { userId, changes }. Suggest improvements for long-term compatibility."
+    context: "This is a public REST API used by third-party integrations."
+  - id: task-003
+    prompt: "Design pagination and filtering for a customer invoices endpoint."
+    context: "The API is used by dashboard clients and third-party accounting integrations."
