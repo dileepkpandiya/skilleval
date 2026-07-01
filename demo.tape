@@ -4,7 +4,6 @@ Set Width 1200
 Set Height 600
 Set Theme "Dracula"
 
-Type "npx @dileeppandiya/skilleval ./samples/api-design --tasks ./tasks/sample-tasks.yaml"
+Type "./scripts/demo-output.sh"
 Enter
-Sleep 15s
-Sleep 3s
+Sleep 4s
