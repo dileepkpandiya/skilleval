@@ -3,7 +3,7 @@
 Know if your Claude SKILL.md files actually improve outputs before your users find out they do not.
 
 ```bash
-npx skilleval ./my-skill --tasks ./tasks.yaml
+npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
 ```
 
 ```text
@@ -54,13 +54,13 @@ Default models:
 Install globally:
 
 ```bash
-npm install -g skilleval
+npm install -g @dileeppandiya/skilleval
 ```
 
 Or run without installing:
 
 ```bash
-npx skilleval ./my-skill --tasks ./tasks.yaml
+npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
 ```
 
 Run against a sample skill included in this repo:
@@ -175,7 +175,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install -g skilleval
+      - run: npm install -g @dileeppandiya/skilleval
       - run: skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
