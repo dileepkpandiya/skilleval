@@ -1,5 +1,7 @@
 # skilleval
 
+![skilleval demo](./demo.gif)
+
 Know if your Claude SKILL.md files actually improve outputs before your users find out they do not.
 
 ```bash
