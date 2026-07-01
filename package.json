@@ -1,9 +1,9 @@
 {
-  "name": "skilleval",
+  "name": "@dileeppandiya/skilleval",
   "version": "0.1.0",
   "description": "Evaluate whether Claude SKILL.md files improve LLM outputs.",
   "bin": {
-    "skilleval": "./bin/skilleval.js"
+    "skilleval": "bin/skilleval.js"
   },
   "scripts": {
     "dev": "ts-node src/cli.ts",
@@ -19,11 +19,13 @@
     "@google/generative-ai": "latest",
     "@types/js-yaml": "latest",
     "commander": "^15.0.0",
-    "js-yaml": "latest"
+    "js-yaml": "latest",
+    "json-repair": "npm:jsonrepair@^3.14.1"
   },
   "devDependencies": {
     "@types/node": "latest",
     "ts-node": "latest",
     "typescript": "latest"
-  }
+  },
+  "license": "MIT"
 }

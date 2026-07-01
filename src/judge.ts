@@ -4,6 +4,8 @@ import { MODELS } from './config';
 import type { ParsedSkill } from './parser';
 import type { ABResult } from './runner';
 
+const { jsonrepair } = createRequire(__filename)('json-repair') as { jsonrepair: (json: string) => string };
+
 export interface JudgeResult {
   taskId: string;
   withSkillScore: number;
@@ -29,7 +31,7 @@ export interface EvalReport {
 
 export type JudgeProvider = 'gemini' | 'anthropic' | 'openai';
 
-interface JudgeOptions {
+export interface JudgeOptions {
   googleApiKey?: string;
   anthropicApiKey?: string;
   openAIApiKey?: string;
@@ -65,7 +67,7 @@ type GoogleGenerativeAIConstructor = new (apiKey: string) => {
   getGenerativeModel(options: { model: string; generationConfig?: { maxOutputTokens: number; temperature: number } }): GeminiModel;
 };
 
-interface UsageTotals {
+export interface UsageTotals {
   judgeInputTokens: number;
   judgeOutputTokens: number;
 }
@@ -123,7 +125,7 @@ function loadGoogleGenerativeAI(): { GoogleGenerativeAI: GoogleGenerativeAIConst
 
 type JudgeGenerator = (prompt: string, usage: UsageTotals) => Promise<string>;
 
-function createJudgeGenerator(provider: JudgeProvider, judgeModel: string, options: JudgeOptions): JudgeGenerator {
+export function createJudgeGenerator(provider: JudgeProvider, judgeModel: string, options: JudgeOptions): JudgeGenerator {
   if (provider === 'gemini') {
     const apiKey = options.googleApiKey ?? process.env.GOOGLE_API_KEY;
     if (!apiKey) {
@@ -201,7 +203,7 @@ function createJudgeGenerator(provider: JudgeProvider, judgeModel: string, optio
   };
 }
 
-function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA: string, outputB: string): string {
+export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA: string, outputB: string): string {
   return `You are an expert evaluator comparing two code review responses.
 
 Task prompt: ${taskPrompt}
@@ -240,7 +242,7 @@ function scoresForJudgement(score: number, winnerIsWithSkill: boolean): { withSk
     : { withSkillScore: loserScore, withoutSkillScore: winnerScore };
 }
 
-async function judgeOneTask(
+export async function judgeOneTask(
   generate: JudgeGenerator,
   taskId: string,
   prompt: string,
@@ -258,14 +260,13 @@ async function judgeOneTask(
 
 function parseJudgement(text: string): GeminiJudgement | undefined {
   try {
-    const rawText = text;
     // Strip markdown code fences if present.
-    const cleaned = rawText
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
+    const cleaned = text
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
       .trim();
-    const parsed = JSON.parse(cleaned) as GeminiJudgement;
+    const parsed = JSON.parse(jsonrepair(cleaned)) as GeminiJudgement;
     if (!isJudgement(parsed)) {
       return undefined;
     }
