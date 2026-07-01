@@ -1,6 +1,6 @@
 {
   "name": "@dileeppandiya/skilleval",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Evaluate whether Claude SKILL.md files improve LLM outputs.",
   "bin": {
     "skilleval": "bin/skilleval.js"
