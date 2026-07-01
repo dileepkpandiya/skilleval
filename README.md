@@ -10,21 +10,22 @@ npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
 
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  skilleval results - api-design - 5 tasks
+  skilleval results - api-design - 2 tasks
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Skill effectiveness:   +2.4 / 3
-  Tasks improved:        4 / 5  (80%)
-  Tasks hurt:            0 / 5  (0%)
+  Skill effectiveness:   +0.3 / 3
+  Tasks improved:        1 / 2  (50%)
+  Tasks hurt:            1 / 2  (50%)
   Confidence:            HIGH
 
-  task-001  +3.0  HIGH  Added versioning guidance missing without skill
-  task-002  +1.8  HIGH  Improved precision on error response format
-  task-003  +2.9  HIGH  Surfaced idempotency pattern not mentioned otherwise
+  task-003  +2.5  HIGH  Output A provides a more robust and production-ready API design, featuring critical real-world details like idempotency keys, index-based correlation to handle duplicate request items, and a detailed audit logging schema.
+  task-004  -2.0  HIGH  Output A is more comprehensive and tailored to a public API, offering highly actionable long-term compatibility advice such as a phased migration strategy with Sunset headers and idempotency keys for safe retries.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Runner: claude-sonnet-4-6 | Judge: gemini-3.5-flash
-  Estimated API cost this run: $0.018
+  Estimated API cost this run: $0.101
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+This is a real, unedited run against one of the sample skills in this repo. Note the mixed signal — the skill helped on task-003 but hurt on task-004. skilleval doesn't inflate scores to make skills look good; it reports what the judge actually found, including when a skill only helps some of the time.
 
 ## Why
 
