@@ -12,6 +12,8 @@
     "parse-test": "ts-node src/parse-test.ts",
     "run-test": "ts-node src/run-test.ts",
     "judge-test": "ts-node src/judge-test.ts",
+    "unit-test": "ts-node src/judge-unit-test.ts",
+    "judges-test": "ts-node src/judges-unit-test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -9,8 +9,8 @@ async function main(): Promise<void> {
   if (!anthropicApiKey) {
     throw new Error('Missing ANTHROPIC_API_KEY.');
   }
-  if (!process.env.GOOGLE_API_KEY) {
-    throw new Error('Missing GOOGLE_API_KEY.');
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('Missing GEMINI_API_KEY.');
   }
 
   const skill = parseSkillFile(join(process.cwd(), 'samples/test-writer/SKILL.md'));

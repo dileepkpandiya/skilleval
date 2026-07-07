@@ -1,18 +1,22 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { createRequire } from 'node:module';
+import { randomInt } from 'node:crypto';
 import { MODELS } from './config';
+import { createJudgeProvider, type JudgeProvider, type JudgeProviderName, type JudgeResult as ProviderJudgeResult } from './judges';
 import type { ParsedSkill } from './parser';
 import type { ABResult } from './runner';
 
-const { jsonrepair } = createRequire(__filename)('json-repair') as { jsonrepair: (json: string) => string };
-
-export interface JudgeResult {
+export interface EvalTaskResult {
   taskId: string;
   withSkillScore: number;
   withoutSkillScore: number;
   diff: number;
-  confidence: 'HIGH' | 'MED' | 'LOW';
+  confidence: ResultConfidence;
   reasoning: string;
+  scores?: number[];
+  mean?: number;
+  stddev?: number;
+  min?: number;
+  max?: number;
+  runs?: number;
 }
 
 export interface EvalReport {
@@ -24,48 +28,37 @@ export interface EvalReport {
   tasksImproved: number;
   tasksHurt: number;
   tasksNeutral: number;
-  overallConfidence: 'HIGH' | 'MED' | 'LOW';
-  results: JudgeResult[];
+  overallConfidence: ResultConfidence;
+  results: EvalTaskResult[];
   estimatedCost: number;
+  runs: number;
+  avgStddev?: number;
+  minDiff?: number;
+  maxDiff?: number;
 }
 
-export type JudgeProvider = 'gemini' | 'anthropic' | 'openai';
+export type ResultConfidence = 'HIGH' | 'MEDIUM' | 'LOW';
 
 export interface JudgeOptions {
-  googleApiKey?: string;
-  anthropicApiKey?: string;
-  openAIApiKey?: string;
   judgeModel?: string;
-  judgeProvider?: JudgeProvider;
+  judgeProvider?: JudgeProviderName;
+  judge?: JudgeProvider;
   runnerModel?: string;
   runnerInputTokens?: number;
   runnerOutputTokens?: number;
   print?: boolean;
+  runs?: number;
+  seed?: number;
+  verbose?: boolean;
+  onPositionAssignment?: (assignment: PositionAssignment) => void;
 }
 
-interface GeminiJudgement {
-  winner: 'A' | 'B';
-  score: number;
-  confidence: 'HIGH' | 'MED' | 'LOW';
-  reason: string;
+export interface PositionAssignment {
+  taskId: string;
+  runIndex: number;
+  skillOnPosition: 'A' | 'B';
+  skillOffPosition: 'A' | 'B';
 }
-
-
-type GeminiModel = {
-  generateContent(prompt: string): Promise<{
-    response: {
-      text(): string;
-      usageMetadata?: {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-      };
-    };
-  }>;
-};
-
-type GoogleGenerativeAIConstructor = new (apiKey: string) => {
-  getGenerativeModel(options: { model: string; generationConfig?: { maxOutputTokens: number; temperature: number } }): GeminiModel;
-};
 
 export interface UsageTotals {
   judgeInputTokens: number;
@@ -76,40 +69,56 @@ const RUNNER_MODEL = process.env.SKILLEVAL_DEV === 'true'
   ? MODELS.runner.dev
   : MODELS.runner.default;
 const JUDGE_MODEL = MODELS.judge.default;
-const MAX_ATTEMPTS = 3;
 
 export async function judgeResults(
   skill: ParsedSkill,
   results: ABResult[],
   options: JudgeOptions = {},
 ): Promise<EvalReport> {
-  const provider = options.judgeProvider ?? 'gemini';
-  const judgeModel = options.judgeModel ?? (provider === 'anthropic' ? MODELS.judge.fallback : JUDGE_MODEL);
-  const generate = createJudgeGenerator(provider, judgeModel, options);
-  const judged: JudgeResult[] = [];
+  const providerName = options.judgeProvider ?? 'gemini-flash';
+  const judge = options.judge ?? createJudgeProvider(providerName);
+  const judgeModel = options.judgeModel ?? providerName;
+  const judged: EvalTaskResult[] = [];
   const usage: UsageTotals = { judgeInputTokens: 0, judgeOutputTokens: 0 };
+  const rng = createRng(options.seed);
 
-  for (const result of results) {
-    const swapped = Math.random() < 0.5;
-    const outputA = swapped ? result.withSkill.output : result.withoutSkill.output;
-    const outputB = swapped ? result.withoutSkill.output : result.withSkill.output;
-    const prompt = buildJudgePrompt(result.prompt, result.context ?? '', outputA, outputB);
+  for (const taskResults of groupResultsByTask(results)) {
+    const samples: Array<{
+      withSkillScore: number;
+      withoutSkillScore: number;
+      diff: number;
+      reasoning: string;
+    }> = [];
 
-    const judgement = await judgeOneTask(generate, result.taskId, prompt, usage);
-    if (!judgement) continue;
+    for (const result of taskResults) {
+      const swapped = rng() < 0.5;
+      const assignment: PositionAssignment = {
+        taskId: result.taskId,
+        runIndex: result.runIndex ?? 0,
+        skillOnPosition: swapped ? 'A' : 'B',
+        skillOffPosition: swapped ? 'B' : 'A',
+      };
+      logPositionAssignment(assignment, options);
+      const outputA = swapped ? result.withSkill.output : result.withoutSkill.output;
+      const outputB = swapped ? result.withoutSkill.output : result.withSkill.output;
+      const prompt = buildJudgePrompt(result.prompt, result.context ?? '');
+      const judgement = await judgeOneTask(judge, result.taskId, prompt, outputA, outputB);
 
-    const winnerIsWithSkill = swapped ? judgement.winner === 'A' : judgement.winner === 'B';
-    const { withSkillScore, withoutSkillScore } = scoresForJudgement(judgement.score, winnerIsWithSkill);
-    const diff = round1(withSkillScore - withoutSkillScore);
+      const winnerIsWithSkill = judgement.winner === 'tie'
+        ? undefined
+        : (swapped ? judgement.winner === 'A' : judgement.winner === 'B');
+      const { withSkillScore, withoutSkillScore } = scoresForJudgement(judgement.margin, winnerIsWithSkill);
+      const diff = round1(withSkillScore - withoutSkillScore);
+      samples.push({
+        withSkillScore,
+        withoutSkillScore,
+        diff,
+        reasoning: judgement.rationale,
+      });
+    }
 
-    judged.push({
-      taskId: result.taskId,
-      withSkillScore,
-      withoutSkillScore,
-      diff,
-      confidence: judgement.confidence,
-      reasoning: judgement.reason,
-    });
+    if (samples.length === 0) continue;
+    judged.push(buildJudgeResult(taskResults[0].taskId, samples));
   }
 
   const report = buildReport(skill.name, results, judged, usage, { ...options, judgeModel });
@@ -117,123 +126,24 @@ export async function judgeResults(
   return report;
 }
 
-
-function loadGoogleGenerativeAI(): { GoogleGenerativeAI: GoogleGenerativeAIConstructor } {
-  const require = createRequire(__filename);
-  return require('@google/generative-ai') as { GoogleGenerativeAI: GoogleGenerativeAIConstructor };
-}
-
-type JudgeGenerator = (prompt: string, usage: UsageTotals) => Promise<string>;
-
-export function createJudgeGenerator(provider: JudgeProvider, judgeModel: string, options: JudgeOptions): JudgeGenerator {
-  if (provider === 'gemini') {
-    const apiKey = options.googleApiKey ?? process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      throw new Error('Missing GOOGLE_API_KEY.');
-    }
-
-    const { GoogleGenerativeAI } = loadGoogleGenerativeAI();
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: judgeModel,
-      generationConfig: {
-        maxOutputTokens: 1024,
-        temperature: 0.1,
-      },
-    });
-
-    return async (prompt, usage) => {
-      const response = await model.generateContent(prompt);
-      const metadata = response.response.usageMetadata;
-      const text = response.response.text().trim();
-      usage.judgeInputTokens += metadata?.promptTokenCount ?? estimateTokens(prompt);
-      usage.judgeOutputTokens += metadata?.candidatesTokenCount ?? estimateTokens(text);
-      return text;
-    };
-  }
-
-  if (provider === 'anthropic') {
-    const apiKey = options.anthropicApiKey ?? process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      throw new Error('Missing ANTHROPIC_API_KEY.');
-    }
-    const client = new Anthropic({ apiKey });
-
-    return async (prompt, usage) => {
-      const message = await client.messages.create({
-        model: judgeModel,
-        max_tokens: 1024,
-        temperature: 0.1,
-        messages: [{ role: 'user', content: prompt }],
-      });
-      const text = extractAnthropicText(message.content).trim();
-      usage.judgeInputTokens += message.usage.input_tokens;
-      usage.judgeOutputTokens += message.usage.output_tokens;
-      return text;
-    };
-  }
-
-  return async (prompt, usage) => {
-    const apiKey = options.openAIApiKey ?? process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('Missing OPENAI_API_KEY.');
-    }
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: judgeModel,
-        temperature: 0.1,
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const body = await response.json() as OpenAIChatResponse;
-    if (!response.ok) {
-      throw new Error(`OpenAI judge request failed: ${JSON.stringify(body)}`);
-    }
-    const text = body.choices?.[0]?.message?.content?.trim() ?? '';
-    usage.judgeInputTokens += body.usage?.prompt_tokens ?? estimateTokens(prompt);
-    usage.judgeOutputTokens += body.usage?.completion_tokens ?? estimateTokens(text);
-    return text;
-  };
-}
-
-export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA: string, outputB: string): string {
-  return `You are an expert evaluator comparing two code review responses.
-
-Task prompt: ${taskPrompt}
-Task context: ${taskContext}
+export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA?: string, outputB?: string): string {
+  const basePrompt = `Task prompt: ${taskPrompt}
+Task context: ${taskContext}`;
+  if (outputA === undefined || outputB === undefined) return basePrompt;
+  return `${basePrompt}
 
 Output A:
 ${outputA}
 
 Output B:
-${outputB}
-
-A good code review:
-- Identifies real bugs that can be demonstrated from the code shown
-- Explains the risk clearly so a maintainer can act
-- Does NOT rewrite the code unless the current design is fundamentally broken
-- Only reports findings directly verifiable from the code shown
-
-Compare only on review quality: correctness of findings, depth of analysis, and actionability.
-Penalize hallucinated findings (issues not present in the code) and unnecessary rewrites.
-
-CRITICAL: Respond with ONLY a raw JSON object. No markdown. No code fences. No text before or after.
-{"winner":"A","score":1.5,"confidence":"HIGH","reason":"One sentence explaining why."}
-
-confidence must be exactly one of: "HIGH", "MED", "LOW"
-score must be between 0.0 and 3.0
-winner must be "A" or "B"`;
+${outputB}`;
 }
 
-function scoresForJudgement(score: number, winnerIsWithSkill: boolean): { withSkillScore: number; withoutSkillScore: number } {
+function scoresForJudgement(score: number, winnerIsWithSkill: boolean | undefined): { withSkillScore: number; withoutSkillScore: number } {
   const clamped = Math.max(0, Math.min(3, score));
+  if (winnerIsWithSkill === undefined) {
+    return { withSkillScore: 1.5, withoutSkillScore: 1.5 };
+  }
   const winnerScore = round1((3 + clamped) / 2);
   const loserScore = round1((3 - clamped) / 2);
 
@@ -243,61 +153,30 @@ function scoresForJudgement(score: number, winnerIsWithSkill: boolean): { withSk
 }
 
 export async function judgeOneTask(
-  generate: JudgeGenerator,
+  judge: JudgeProvider,
   taskId: string,
-  prompt: string,
-  usage: UsageTotals,
-): Promise<GeminiJudgement | undefined> {
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-    const text = await generate(prompt, usage);
-    const parsed = parseJudgement(text);
-    if (parsed) return parsed;
-  }
-
-  console.warn(`Warning: skipping task ${taskId}; Gemini did not return valid judge JSON after ${MAX_ATTEMPTS} attempts.`);
-  return undefined;
-}
-
-function parseJudgement(text: string): GeminiJudgement | undefined {
+  taskPrompt: string,
+  outputA: string,
+  outputB: string,
+): Promise<ProviderJudgeResult> {
   try {
-    // Strip markdown code fences if present.
-    const cleaned = text
-      .trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim();
-    const parsed = JSON.parse(jsonrepair(cleaned)) as GeminiJudgement;
-    if (!isJudgement(parsed)) {
-      return undefined;
-    }
-    return parsed;
-  } catch {
-    return undefined;
+    return await judge.score(taskPrompt, outputA, outputB);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Judge failed for task ${taskId}: ${detail}`);
   }
-}
-
-function isJudgement(value: unknown): value is GeminiJudgement {
-  if (value === null || typeof value !== 'object') return false;
-  const judgement = value as Record<string, unknown>;
-  return (
-    (judgement.winner === 'A' || judgement.winner === 'B')
-    && typeof judgement.score === 'number'
-    && Number.isFinite(judgement.score)
-    && judgement.score >= 0
-    && judgement.score <= 3
-    && (judgement.confidence === 'HIGH' || judgement.confidence === 'MED' || judgement.confidence === 'LOW')
-    && typeof judgement.reason === 'string'
-  );
 }
 
 function buildReport(
   skillName: string,
   allResults: ABResult[],
-  judged: JudgeResult[],
+  judged: EvalTaskResult[],
   usage: UsageTotals,
   options: JudgeOptions,
 ): EvalReport {
-  const avgDiff = round1(judged.reduce((sum, result) => sum + result.diff, 0) / (judged.length || 1));
+  const avgDiff = round1(mean(judged.map((result) => result.diff)));
+  const overallScores = judged.flatMap((result) => result.scores ?? [result.diff]);
+  const overallStats = summarize(overallScores);
   const tasksImproved = judged.filter((result) => result.diff >= 0.5).length;
   const tasksHurt = judged.filter((result) => result.diff <= -0.5).length;
   const tasksNeutral = judged.length - tasksImproved - tasksHurt;
@@ -315,22 +194,18 @@ function buildReport(
     tasksImproved,
     tasksHurt,
     tasksNeutral,
-    overallConfidence: overallConfidence(judged),
+    overallConfidence: confidenceForStddev(overallStats.stddev),
     results: judged,
     estimatedCost: runnerCost + judgeCost,
+    runs: options.runs ?? Math.max(1, ...judged.map((result) => result.runs ?? 1)),
+    avgStddev: overallStats.stddev,
+    minDiff: overallStats.min,
+    maxDiff: overallStats.max,
   };
 }
 
 function sumTokenField(results: ABResult[], field: 'inputTokens' | 'outputTokens'): number {
   return results.reduce((sum, result) => sum + (result.withSkill[field] ?? 0) + (result.withoutSkill[field] ?? 0), 0);
-}
-
-function overallConfidence(results: JudgeResult[]): 'HIGH' | 'MED' | 'LOW' {
-  const high = results.filter((result) => result.confidence === 'HIGH').length;
-  const med = results.filter((result) => result.confidence === 'MED').length;
-  if (high >= Math.ceil(results.length / 2)) return 'HIGH';
-  if (high + med >= Math.ceil(results.length / 2)) return 'MED';
-  return 'LOW';
 }
 
 export function printEvalReport(report: EvalReport): void {
@@ -340,13 +215,18 @@ export function printEvalReport(report: EvalReport): void {
   console.log(line);
   console.log(`  skilleval results - ${report.skillName} - ${report.totalTasks} tasks`);
   console.log(line);
-  console.log(`  Skill effectiveness:   ${formatDiff(report.avgDiff)} / 3`);
+  const multiRun = report.runs > 1;
+  console.log(`  Skill effectiveness:   ${multiRun ? formatStats(report.avgDiff, report.avgStddev ?? 0, report.minDiff ?? report.avgDiff, report.maxDiff ?? report.avgDiff) : `${formatDiff(report.avgDiff)} / 3`}`);
   console.log(`  Tasks improved:        ${report.tasksImproved} / ${report.totalTasks}  (${improvedPct}%)`);
   console.log(`  Tasks hurt:            ${report.tasksHurt} / ${report.totalTasks}  (${hurtPct}%)`);
   console.log(`  Confidence:            ${report.overallConfidence}`);
   console.log('');
   for (const result of report.results) {
-    console.log(`  ${result.taskId}  ${formatDiff(result.diff)}  ${result.confidence.padEnd(4)}  ${result.reasoning}`);
+    if (multiRun) {
+      console.log(`  ${result.taskId}  ${formatStats(result.mean ?? result.diff, result.stddev ?? 0, result.min ?? result.diff, result.max ?? result.diff)}  ${result.confidence.padEnd(6)}  ${result.reasoning}`);
+    } else {
+      console.log(`  ${result.taskId}  ${formatDiff(result.diff)}  ${result.confidence.padEnd(4)}  ${result.reasoning}`);
+    }
   }
   console.log(line);
   console.log(`  Runner: ${report.model} | Judge: ${report.judgeModel}`);
@@ -354,27 +234,107 @@ export function printEvalReport(report: EvalReport): void {
   console.log(line);
 }
 
-function extractAnthropicText(content: Anthropic.Messages.Message['content']): string {
-  return content
-    .filter((block): block is Anthropic.Messages.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n');
+function percent(part: number, whole: number): number {
+  return whole === 0 ? 0 : Math.round((part / whole) * 100);
 }
 
-interface OpenAIChatResponse {
-  choices?: Array<{ message?: { content?: string } }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
+function buildJudgeResult(
+  taskId: string,
+  samples: Array<{ withSkillScore: number; withoutSkillScore: number; diff: number; reasoning: string }>,
+): EvalTaskResult {
+  const diffs = samples.map((sample) => sample.diff);
+  const stats = summarize(diffs);
+  return {
+    taskId,
+    withSkillScore: round1(mean(samples.map((sample) => sample.withSkillScore))),
+    withoutSkillScore: round1(mean(samples.map((sample) => sample.withoutSkillScore))),
+    diff: stats.mean,
+    confidence: confidenceForStddev(stats.stddev),
+    reasoning: samples[samples.length - 1].reasoning,
+    scores: diffs,
+    mean: stats.mean,
+    stddev: stats.stddev,
+    min: stats.min,
+    max: stats.max,
+    runs: samples.length,
   };
 }
 
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+export function buildEvalReportForTest(skillName: string, scoresByTask: Record<string, number[]>, runs: number): EvalReport {
+  const judged = Object.entries(scoresByTask).map(([taskId, scores]) => buildJudgeResult(
+    taskId,
+    scores.map((score) => ({
+      withSkillScore: 0,
+      withoutSkillScore: 0,
+      diff: score,
+      reasoning: 'mock reasoning',
+    })),
+  ));
+  return buildReport(skillName, [], judged, { judgeInputTokens: 0, judgeOutputTokens: 0 }, { runs });
 }
 
-function percent(part: number, whole: number): number {
-  return whole === 0 ? 0 : Math.round((part / whole) * 100);
+function groupResultsByTask(results: ABResult[]): ABResult[][] {
+  const groups = new Map<string, ABResult[]>();
+  for (const result of results) {
+    const group = groups.get(result.taskId);
+    if (group) {
+      group.push(result);
+    } else {
+      groups.set(result.taskId, [result]);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+function logPositionAssignment(assignment: PositionAssignment, options: JudgeOptions): void {
+  options.onPositionAssignment?.(assignment);
+  if (!options.verbose) return;
+  console.error(
+    `[skilleval debug] judge positions task=${assignment.taskId} run=${assignment.runIndex + 1}: `
+    + `skill-on=${assignment.skillOnPosition} skill-off=${assignment.skillOffPosition}`,
+  );
+}
+
+function summarize(values: number[]): { mean: number; stddev: number; min: number; max: number } {
+  if (values.length === 0) {
+    return { mean: 0, stddev: 0, min: 0, max: 0 };
+  }
+  const average = mean(values);
+  const variance = mean(values.map((value) => (value - average) ** 2));
+  return {
+    mean: round1(average),
+    stddev: round1(Math.sqrt(variance)),
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
+}
+
+function mean(values: number[]): number {
+  return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function confidenceForStddev(stddev: number): ResultConfidence {
+  if (stddev < 0.5) return 'HIGH';
+  if (stddev <= 1.0) return 'MEDIUM';
+  return 'LOW';
+}
+
+function createRng(seed: number | undefined): () => number {
+  if (seed === undefined) {
+    return () => randomInt(0, 0x100000000) / 0x100000000;
+  }
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6D2B79F5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function formatStats(meanValue: number, stddev: number, min: number, max: number): string {
+  return `${formatDiff(meanValue)} ± ${stddev.toFixed(1)} (range: ${formatDiff(min)} to ${formatDiff(max)})`;
 }
 
 function formatDiff(value: number): string {

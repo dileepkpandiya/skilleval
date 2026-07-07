@@ -10,6 +10,7 @@ export interface Task {
 
 export interface ABResult {
   taskId: string;
+  runIndex?: number;
   prompt: string;
   context?: string;
   withSkill: {
@@ -32,6 +33,7 @@ type RunOutput = ABResult['withSkill'];
 
 interface RunOptions {
   model?: string;
+  runs?: number;
 }
 
 const MODEL = process.env.SKILLEVAL_DEV === 'true'
@@ -49,23 +51,27 @@ export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string, o
   const client = new Anthropic({ apiKey });
   const results: ABResult[] = [];
   const model = options.model ?? MODEL;
+  const runs = options.runs ?? 1;
 
   for (const task of tasks) {
     const context = task.context ?? '';
     const withSkillSystem = `[SKILL: ${skill.name}]\n\n${skill.instructionBody}\n\n---\n\n${context}`;
 
-    const [withSkill, withoutSkill] = await Promise.all([
-      runClaudeCall(client, task, withSkillSystem, 'with skill', model),
-      runClaudeCall(client, task, context, 'without skill', model),
-    ]);
+    for (let runIndex = 0; runIndex < runs; runIndex += 1) {
+      const [withSkill, withoutSkill] = await Promise.all([
+        runClaudeCall(client, task, withSkillSystem, 'with skill', model),
+        runClaudeCall(client, task, context, 'without skill', model),
+      ]);
 
-    results.push({
-      taskId: task.id,
-      prompt: task.prompt,
-      context: task.context,
-      withSkill,
-      withoutSkill,
-    });
+      results.push({
+        taskId: task.id,
+        runIndex,
+        prompt: task.prompt,
+        context: task.context,
+        withSkill,
+        withoutSkill,
+      });
+    }
   }
 
   return results;

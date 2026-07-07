@@ -74,7 +74,7 @@ skilleval ./samples/api-design --tasks ./tasks/sample-tasks.yaml
 
 ## Setup
 
-skilleval needs two API keys:
+skilleval needs a Claude runner key and one judge key:
 
 Runner (required - must be Claude, skills are written for Claude):
 
@@ -82,18 +82,23 @@ Runner (required - must be Claude, skills are written for Claude):
 export ANTHROPIC_API_KEY=your-anthropic-key
 ```
 
-Judge (default - 10x cheaper than Claude for structured scoring):
+Default judge (`gemini-flash`):
 
 ```bash
-export GOOGLE_API_KEY=your-google-key
+export GEMINI_API_KEY=your-gemini-key
 ```
 
 Get a free key at: https://aistudio.google.com
 
-Using Claude as judge instead (no Google key needed):
+Supported judge providers:
+- `gemini-flash` uses `GEMINI_API_KEY` and is the default low-cost judge.
+- `claude` uses `ANTHROPIC_API_KEY`.
+- `openai` uses `OPENAI_API_KEY`.
+
+Using Claude as judge:
 
 ```bash
-skilleval ./my-skill --judge-provider anthropic --judge-model claude-haiku-4-5
+skilleval ./my-skill --judge-provider claude
 ```
 
 ## Writing test tasks
@@ -136,8 +141,14 @@ Options:
                           (default: claude-sonnet-4-6)
   --judge-model <model>   Model for the LLM judge
                           (default: gemini-3.5-flash)
-  --judge-provider <p>    Judge provider: gemini | anthropic | openai
-                          (default: gemini)
+  --judge-provider <p>    Judge provider: gemini-flash | claude | openai
+                          (default: gemini-flash)
+  --runs <n>              Number of independent A/B runs per task
+                          (default: 1)
+  --seed <number>         Numeric seed for reproducible judge output ordering
+  --verbose               Print debug details to stderr
+  --fail-below <n>        Exit 1 if overall effectiveness is below threshold
+  --fail-if-hurt-pct <n>  Exit 1 if percentage of hurt tasks exceeds threshold
   --cost                  Estimate API cost before running, ask confirmation
   --json                  Output results as JSON to stdout
   --init                  Scaffold a new skill directory with templates
@@ -162,30 +173,46 @@ Estimate cost before running:
 skilleval ./my-skill --cost
 ```
 
-## Use in CI
+## Multi-run averaging
+
+Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI. skilleval reruns the skill-on and skill-off generations independently for each task, judges each paired run, and reports the mean, standard deviation, and range. Pair it with `--seed <number>` when you need reproducible output ordering while debugging. Add `--verbose` to log which side received the skill-assisted output for each judged pair.
+
+## CI Usage
+
+Use threshold flags to turn skilleval into a PR check. `--fail-below` fails when the overall effectiveness score is too low, and `--fail-if-hurt-pct` fails when too many tasks regress. Threshold failures exit with code 1; runtime or configuration errors exit with code 2.
 
 ```yaml
-name: Evaluate Skills
+name: skilleval
+
 on:
   pull_request:
     paths:
       - '**/SKILL.md'
+
 jobs:
-  eval:
+  skilleval:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm install -g @dileeppandiya/skilleval
-      - run: skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
+      - run: npx @dileeppandiya/skilleval ./skill --tasks ./tasks.yaml --fail-below 0.3 --runs 3
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      - name: Fail if skill score is negative
-        run: node -e "const r=require('./results.json'); if(r.avgDiff < 0) process.exit(1)"
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 ```
+
+You can also store thresholds in `skilleval.config.json` and keep the workflow command shorter:
+
+```json
+{
+  "failBelow": 0.3,
+  "failIfHurtPct": 50
+}
+```
+
+Command-line flags override values from `skilleval.config.json`.
 
 ## Scoring
 
@@ -197,7 +224,7 @@ diff = withSkillScore - withoutSkillScore
 
 Confidence ratings:
 - HIGH - the judge is confident in the winner
-- MED - useful signal, but review task details
+- MEDIUM - useful signal, but review task details
 - LOW - weak signal; the skill may be task-dependent
 
 ## Contributing
