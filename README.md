@@ -15,10 +15,10 @@ npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
   Skill effectiveness:   +0.3 / 3
   Tasks improved:        1 / 2  (50%)
   Tasks hurt:            1 / 2  (50%)
-  Confidence:            HIGH
+  Confidence:            UNRATED (use --runs 3+ for confidence)
 
-  task-003  +2.5  HIGH  Output A provides a more robust and production-ready API design, featuring critical real-world details like idempotency keys, index-based correlation to handle duplicate request items, and a detailed audit logging schema.
-  task-004  -2.0  HIGH  Output A is more comprehensive and tailored to a public API, offering highly actionable long-term compatibility advice such as a phased migration strategy with Sunset headers and idempotency keys for safe retries.
+  task-003  +2.5  UNRATED (use --runs 3+ for confidence)  Output A provides a more robust and production-ready API design, featuring critical real-world details like idempotency keys, index-based correlation to handle duplicate request items, and a detailed audit logging schema.
+  task-004  -2.0  UNRATED (use --runs 3+ for confidence)  Output A is more comprehensive and tailored to a public API, offering highly actionable long-term compatibility advice such as a phased migration strategy with Sunset headers and idempotency keys for safe retries.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Runner: claude-sonnet-4-6 | Judge: gemini-3.5-flash
   Estimated API cost this run: $0.101
@@ -42,8 +42,9 @@ skilleval gives you a repeatable score for any SKILL.md file in under 2 minutes.
 2. A/B Run    -> sends each test task to Claude twice:
                  (a) with your skill injected into the system prompt
                  (b) without your skill
-3. Judge      -> a blind LLM judge compares the two outputs
-4. Report     -> diff score, per-task breakdown, confidence rating
+3. Assert     -> optional deterministic task assertions check the skill output
+4. Judge      -> a blind LLM judge compares the two outputs
+5. Report     -> diff score, per-task breakdown, confidence rating
 ```
 
 The judge is blind. It does not know which output used the skill, and output order is randomized to reduce position bias.
@@ -128,9 +129,31 @@ tasks:
     context: ""
 ```
 
+Add optional deterministic assertions when a task has concrete requirements that should be checked before interpreting the LLM judge:
+
+```yaml
+tasks:
+  - id: api-design-001
+    prompt: "Design a REST endpoint for user login"
+    context: "Building a Node.js API"
+    assertions:
+      must_contain:
+        - "POST"
+        - "401"
+      must_not_contain:
+        - "GET /login"
+      regex_match:
+        - "POST\\s+/.*login"
+      min_length: 100
+      max_length: 2000
+```
+
+Assertions run only against the skill-assisted output. If an assertion fails, skilleval still runs the LLM judge, reports the assertion failure in terminal and JSON output, and caps the final task diff to `<= -0.5` so the task counts as hurt. Tasks without assertions work unchanged.
+
 Tips for writing good tasks:
 - Match prompts to your skill's stated domain. Generic prompts that any LLM answers equally well produce noisy scores.
 - Include context to simulate realistic usage conditions.
+- Use assertions for hard requirements such as required status codes, forbidden endpoints, output length, or regex-shaped content.
 - Aim for 5-10 tasks for a reliable signal. 3 is minimum, 15+ is thorough.
 - Mix easy and hard prompts. If every task scores +3, your rubric may be too coarse.
 
@@ -183,7 +206,9 @@ skilleval ./my-skill --cost
 
 ## Multi-run averaging
 
-Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI. skilleval reruns the skill-on and skill-off generations independently for each task, judges each paired run, and reports the mean, standard deviation, and range. Pair it with `--seed <number>` when you need reproducible output ordering while debugging. Add `--verbose` to log which side received the skill-assisted output for each judged pair.
+By default, skilleval runs each task once and marks confidence as `UNRATED` because stability cannot be inferred from a single sample. Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI.
+
+When `N > 1`, skilleval reruns the full skill-on and skill-off eval loop sequentially, judges each paired run, and reports mean, median, and standard deviation across the collected diffs. JSON output keeps each individual run under `runs` and adds an `aggregate` object. Pair it with `--seed <number>` when you need reproducible output ordering while debugging. Add `--verbose` to log which side received the skill-assisted output for each judged pair.
 
 ## CI Usage
 
@@ -231,9 +256,24 @@ diff = withSkillScore - withoutSkillScore
 ```
 
 Confidence ratings:
-- HIGH - the judge is confident in the winner
+- UNRATED - only one run was collected; use `--runs 3+` for confidence
+- HIGH - repeated runs were stable
 - MEDIUM - useful signal, but review task details
-- LOW - weak signal; the skill may be task-dependent
+- LOW - noisy signal; the skill may be task-dependent
+
+## Development
+
+Run the offline unit test suite:
+
+```bash
+npm test
+```
+
+Run TypeScript compilation:
+
+```bash
+npm run build
+```
 
 ## Contributing
 

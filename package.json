@@ -1,10 +1,18 @@
 {
   "name": "@dileeppandiya/skilleval",
-  "version": "0.1.1",
-  "description": "Evaluate whether Claude SKILL.md files improve LLM outputs.",
+  "version": "0.1.2",
+  "description": "Evaluate Claude SKILL.md files with A/B runs, task assertions, and blind LLM judges.",
   "bin": {
     "skilleval": "bin/skilleval.js"
   },
+  "keywords": [
+    "claude",
+    "skills",
+    "eval",
+    "llm",
+    "benchmark",
+    "cli"
+  ],
   "files": [
     "bin/skilleval.js",
     "dist/*.js",

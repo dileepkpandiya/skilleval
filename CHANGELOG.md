@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Added deterministic per-task assertions in `tasks.yaml` with JSON and terminal reporting.
+- Added `UNRATED` confidence for single-run evals; use `--runs 3+` for HIGH/MEDIUM/LOW confidence.
+- Added multi-run aggregate JSON output with per-run details.
+- Added Vitest unit tests for judge scoring, assertions, and parser behavior.
 - Increased Gemini judge structured-output `maxOutputTokens` to 2048 and added finish-reason diagnostics so `MAX_TOKENS` truncation is visible in retry warnings and skipped-task reasons.
 - Switched the Gemini judge to native structured JSON output with a response schema while retaining a three-attempt malformed JSON retry fallback.
 - Judge failures now produce explicit `status: "skipped"` task results with skip reasons and summary counts instead of silently dropping failed tasks.
