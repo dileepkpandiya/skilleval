@@ -5,6 +5,20 @@
   "bin": {
     "skilleval": "bin/skilleval.js"
   },
+  "files": [
+    "bin/skilleval.js",
+    "dist/*.js",
+    "!dist/*.test.js",
+    "!dist/*-test.js",
+    "!dist/*unit-test.js",
+    "dist/judges/*.js",
+    "samples/",
+    "tasks/",
+    "calibrations/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "ts-node src/cli.ts",
     "build": "tsc",
