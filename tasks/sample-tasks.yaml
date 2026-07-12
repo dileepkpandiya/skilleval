@@ -20,7 +20,7 @@ tasks:
     prompt: "Review this endpoint design: POST /updateUser with body { userId, changes }. Suggest improvements for long-term compatibility."
     context: "This is a public REST API used by third-party integrations."
   - id: task-005
-    skillTarget: test-writer
+    skillTarget: other-skill
     prompt: "Write unit tests for a function that validates password reset tokens, including expired, reused, and missing-token cases."
     context: "The project uses Jest with TypeScript and avoids network or real-time dependencies in unit tests."
     assertions:
@@ -28,3 +28,13 @@ tasks:
         - "expired"
         - "reused"
       min_length: 100
+  - id: task-multiturn-001
+    skillTarget: api-design
+    context: "Helping a developer debug an API issue"
+    turns:
+      - role: user
+        content: "My API keeps returning 401 errors"
+      - role: assistant
+        content: "That usually means authentication is failing. Are you sending the Authorization header?"
+      - role: user
+        content: "Yes I'm sending it but still getting 401"

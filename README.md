@@ -2,7 +2,7 @@
 
 ![skilleval demo](./demo.gif)
 
-Know if your Claude SKILL.md files actually improve outputs before your users find out they do not.
+Measure whether Claude SKILL.md files improve outputs with blind A/B testing, deterministic assertions, multi-turn tasks, run history, skill comparison, and CI gating.
 
 ```bash
 npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
@@ -25,7 +25,7 @@ npx @dileeppandiya/skilleval ./my-skill --tasks ./tasks.yaml
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-This is a real, unedited run against one of the sample skills in this repo. Note the mixed signal — the skill helped on task-003 but hurt on task-004. skilleval doesn't inflate scores to make skills look good; it reports what the judge actually found, including when a skill only helps some of the time.
+This is a real, unedited run against one of the sample skills in this repo. Note the mixed signal: the skill helped on task-003 but hurt on task-004. skilleval does not inflate scores to make skills look good; it reports what the judge found, including when a skill only helps some of the time.
 
 ## Why
 
@@ -73,7 +73,192 @@ Run against a sample skill included in this repo:
 skilleval ./samples/api-design --tasks ./tasks/sample-tasks.yaml
 ```
 
-## CI Usage
+## Features
+
+- Blind A/B testing with randomized side assignment
+- LLM judge: Gemini Flash default, Claude, and OpenAI supported
+- Deterministic assertions: `must_contain`, `must_not_contain`, `regex_match`, `min_length`, `max_length`
+- Multi-turn conversation task support
+- Accurate cost estimation from actual task content
+- Multi-run averaging with real statistical confidence: `UNRATED` at `--runs 1`, `HIGH`/`MEDIUM`/`LOW` at `--runs 3+`
+- Skill-vs-skill comparison mode with `--compare`
+- Run history auto-saved to `.skilleval/history/`
+- `skilleval diff` to see what changed since the last run
+- CI/CD gating via `--fail-below` and `--fail-if-hurt-pct`
+- GitHub Action: `uses: dileepkpandiya/skilleval@main`
+- Shared task libraries via the `skillTarget` field
+- JSON output mode with `--json` for pipeline integration
+- Cost estimation before running with `--cost`
+- Scaffold new skills with `--init`
+
+## Writing test tasks
+
+Create a `tasks.yaml` file in your skill directory:
+
+```yaml
+tasks:
+  - id: task-001
+    prompt: "Design a REST endpoint for paginating user records"
+    context: "Node.js API, PostgreSQL backend, existing auth middleware"
+
+  - id: task-002
+    prompt: "What HTTP status code should I return when a resource is not found but the parent exists?"
+    context: "We follow RFC 9110 strictly."
+
+  - id: task-003
+    prompt: "How should I version a breaking API change without deprecating v1 immediately?"
+    context: ""
+```
+
+Use `turns` for multi-turn tasks:
+
+```yaml
+tasks:
+  - id: followup-001
+    context: "Debugging session"
+    turns:
+      - role: user
+        content: "My API returns 401"
+      - role: assistant
+        content: "Are you sending the Authorization header?"
+      - role: user
+        content: "Yes, still getting 401"
+```
+
+Tips for writing good tasks:
+- Match prompts to your skill's stated domain. Generic prompts that any LLM answers equally well produce noisy scores.
+- Include context to simulate realistic usage conditions.
+- Use assertions for hard requirements such as required status codes, forbidden endpoints, output length, or regex-shaped content.
+- Use multi-turn tasks for follow-up behavior, clarification loops, debugging sessions, and skills that depend on conversation state.
+- Aim for 5-10 tasks for a reliable signal. 3 is minimum, 15+ is thorough.
+- Mix easy and hard prompts. If every task scores +3, your rubric may be too coarse.
+
+## Assertions
+
+Add deterministic assertions when a task has concrete requirements that should be checked before interpreting the LLM judge:
+
+```yaml
+tasks:
+  - id: api-design-001
+    prompt: "Design a REST endpoint for user login"
+    context: "Building a Node.js API"
+    assertions:
+      must_contain:
+        - "POST"
+        - "401"
+      must_not_contain:
+        - "GET /login"
+      regex_match:
+        - "POST\\s+/.*login"
+      min_length: 100
+      max_length: 2000
+```
+
+Assertions run only against the skill-assisted output. If an assertion fails, skilleval still runs the LLM judge, reports the assertion failure in terminal and JSON output, and caps the final task diff to `<= -0.5` so the task counts as hurt. Tasks without assertions work unchanged.
+
+## Shared Task Libraries
+
+Tag tasks with `skillTarget` to share a single `tasks.yaml` across multiple skills:
+
+```yaml
+tasks:
+  - id: task-001
+    prompt: "Design a REST endpoint"
+    skillTarget: api-design
+  - id: task-002
+    prompt: "Write a GraphQL query"
+    skillTarget: graphql-design
+```
+
+Run only tasks for a specific skill:
+
+```bash
+skilleval ./my-skill --tasks ./shared-tasks.yaml
+```
+
+Override the skill target filter from the CLI:
+
+```bash
+skilleval ./my-skill --tasks ./shared-tasks.yaml \
+  --skill-target api-design
+```
+
+## Multi-Turn Tasks
+
+Test skills across conversation turns, not just single prompts:
+
+```yaml
+tasks:
+  - id: followup-001
+    context: "Debugging session"
+    turns:
+      - role: user
+        content: "My API returns 401"
+      - role: assistant
+        content: "Are you sending the Authorization header?"
+      - role: user
+        content: "Yes, still getting 401"
+```
+
+The skill is injected into the system prompt for all turns. The judge sees the full conversation context when scoring.
+
+## CLI Options
+
+```text
+Usage: skilleval <skill-path> [options]
+
+Arguments:
+  [skill-path]            Path to SKILL.md directory
+
+Options:
+  -t, --tasks <path>      Path to tasks YAML file
+  -m, --model <model>     Claude model for runner
+  --judge-model <model>   Model for LLM judge
+  --judge-provider <p>    gemini-flash | claude | openai
+  --skill-target <name>   Filter tasks by skillTarget field
+  --compare <path>        Compare against a second skill directory
+  --runs <n>              Independent A/B runs per task
+  --seed <n>              Seed for reproducible judge ordering
+  --cost                  Estimate API cost before running
+  --json                  Output results as JSON
+  --no-history            Skip saving run history
+  --verbose               Print debug details to stderr
+  --fail-below <n>        Exit 1 if effectiveness below threshold
+  --fail-if-hurt-pct <n>  Exit 1 if hurt % exceeds threshold
+  --init                  Scaffold a new skill directory
+```
+
+Scaffold a new skill:
+
+```bash
+skilleval --init ./my-new-skill
+```
+
+Get JSON output for CI pipelines:
+
+```bash
+skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
+```
+
+Estimate cost before running:
+
+```bash
+skilleval ./my-skill --cost
+```
+
+Compare two skill versions:
+
+```bash
+skilleval compare ./skill-v1 ./skill-v2 --tasks ./tasks.yaml
+```
+
+The compare report is scored as `skill-v2 - skill-v1`, so a positive average diff means the second skill path performed better. Use `--json` for machine-readable output or `--runs 3` for repeated-run confidence.
+
+By default, skilleval runs each task once and marks confidence as `UNRATED` because stability cannot be inferred from a single sample. Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI.
+
+When `N > 1`, skilleval reruns the full skill-on and skill-off eval loop sequentially, judges each paired run, and reports mean, median, and standard deviation across the collected diffs. JSON output keeps each individual run under `runs` and adds an `aggregate` object. Pair it with `--seed <number>` when you need reproducible output ordering while debugging.
+
+## CI Usage / GitHub Action
 
 Add to any GitHub Actions workflow:
 
@@ -89,11 +274,51 @@ Add to any GitHub Actions workflow:
 
 Full example in `.github/workflows/skilleval-example.yml`.
 
-## Setup
+Use threshold flags to turn skilleval into a PR check. `--fail-below` fails when the overall effectiveness score is too low, and `--fail-if-hurt-pct` fails when too many tasks regress. Threshold failures exit with code 1; runtime or configuration errors exit with code 2.
 
-skilleval needs a Claude runner key and one judge key:
+```yaml
+name: skilleval
 
-Runner (required - must be Claude, skills are written for Claude):
+on:
+  pull_request:
+    paths:
+      - '**/SKILL.md'
+
+jobs:
+  skilleval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npx @dileeppandiya/skilleval ./skill --tasks ./tasks.yaml --fail-below 0.3 --runs 3
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+```
+
+## History & Diff
+
+skilleval auto-saves results to `.skilleval/history/` after each run.
+
+View what changed since your last run:
+
+```bash
+skilleval diff ./my-skill
+```
+
+Use `--no-history` to skip saving, for example in CI:
+
+```bash
+skilleval ./my-skill --tasks ./tasks.yaml --no-history
+```
+
+## Configuration
+
+skilleval needs a Claude runner key and one judge key.
+
+Runner (required because skills are written for Claude):
 
 ```bash
 export ANTHROPIC_API_KEY=your-anthropic-key
@@ -126,166 +351,7 @@ To verify Gemini reliability on your account before trusting it in CI, run the d
 
 It runs the same two-task eval against Gemini 10 times and fails if the skipped-task rate is 10% or higher.
 
-## Writing test tasks
-
-Create a `tasks.yaml` file in your skill directory:
-
-```yaml
-tasks:
-  - id: task-001
-    prompt: "Design a REST endpoint for paginating user records"
-    context: "Node.js API, PostgreSQL backend, existing auth middleware"
-
-  - id: task-002
-    prompt: "What HTTP status code should I return when a resource is not found but the parent exists?"
-    context: "We follow RFC 9110 strictly."
-
-  - id: task-003
-    prompt: "How should I version a breaking API change without deprecating v1 immediately?"
-    context: ""
-```
-
-Add optional deterministic assertions when a task has concrete requirements that should be checked before interpreting the LLM judge:
-
-```yaml
-tasks:
-  - id: api-design-001
-    prompt: "Design a REST endpoint for user login"
-    context: "Building a Node.js API"
-    assertions:
-      must_contain:
-        - "POST"
-        - "401"
-      must_not_contain:
-        - "GET /login"
-      regex_match:
-        - "POST\\s+/.*login"
-      min_length: 100
-      max_length: 2000
-```
-
-Assertions run only against the skill-assisted output. If an assertion fails, skilleval still runs the LLM judge, reports the assertion failure in terminal and JSON output, and caps the final task diff to `<= -0.5` so the task counts as hurt. Tasks without assertions work unchanged.
-
-Tips for writing good tasks:
-- Match prompts to your skill's stated domain. Generic prompts that any LLM answers equally well produce noisy scores.
-- Include context to simulate realistic usage conditions.
-- Use assertions for hard requirements such as required status codes, forbidden endpoints, output length, or regex-shaped content.
-- Aim for 5-10 tasks for a reliable signal. 3 is minimum, 15+ is thorough.
-- Mix easy and hard prompts. If every task scores +3, your rubric may be too coarse.
-
-## Options
-
-```text
-Usage: skilleval <skill-path> [options]
-
-Arguments:
-  skill-path              Path to directory containing SKILL.md
-
-Options:
-  -t, --tasks <path>      Path to tasks YAML file
-                          (default: tasks.yaml inside skill directory)
-  -m, --model <model>     Claude model for A/B runner
-                          (default: claude-sonnet-4-6)
-  --judge-model <model>   Model for the LLM judge
-                          (default: gemini-3.5-flash)
-  --judge-provider <p>    Judge provider: gemini-flash | claude | openai
-                          (default: gemini-flash)
-  --runs <n>              Number of independent A/B runs per task
-                          (default: 1)
-  --seed <number>         Numeric seed for reproducible judge output ordering
-  --verbose               Print debug details to stderr
-  --no-history            Do not save eval result history
-  --fail-below <n>        Exit 1 if overall effectiveness is below threshold
-  --fail-if-hurt-pct <n>  Exit 1 if percentage of hurt tasks exceeds threshold
-  --cost                  Estimate API cost before running, ask confirmation
-  --json                  Output results as JSON to stdout
-  --init                  Scaffold a new skill directory with templates
-  -h, --help              Show help
-```
-
-Scaffold a new skill:
-
-```bash
-skilleval --init ./my-new-skill
-```
-
-Get JSON output for CI pipelines:
-
-```bash
-skilleval ./my-skill --tasks ./tasks.yaml --json > results.json
-```
-
-Estimate cost before running:
-
-```bash
-skilleval ./my-skill --cost
-```
-
-Compare two skill versions directly:
-
-```bash
-skilleval compare ./skill-v1 ./skill-v2 --tasks ./tasks.yaml
-```
-
-## Multi-run averaging
-
-By default, skilleval runs each task once and marks confidence as `UNRATED` because stability cannot be inferred from a single sample. Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI.
-
-When `N > 1`, skilleval reruns the full skill-on and skill-off eval loop sequentially, judges each paired run, and reports mean, median, and standard deviation across the collected diffs. JSON output keeps each individual run under `runs` and adds an `aggregate` object. Pair it with `--seed <number>` when you need reproducible output ordering while debugging. Add `--verbose` to log which side received the skill-assisted output for each judged pair.
-
-## Compare Skill Versions
-
-Use `compare` when you want to test whether an edited skill is better than the previous version without manually diffing separate eval runs:
-
-```bash
-skilleval compare ./skill-v1 ./skill-v2 --tasks ./tasks.yaml
-```
-
-The report is scored as `skill-v2 - skill-v1`, so a positive average diff means the second skill path performed better. Use `--json` for machine-readable output or `--runs 3` for repeated-run confidence.
-
-## History & Diff
-
-skilleval auto-saves results to `.skilleval/history/` after each run.
-
-View what changed since your last run:
-
-```bash
-skilleval diff ./my-skill
-```
-
-Use `--no-history` to skip saving, for example in CI:
-
-```bash
-skilleval ./my-skill --tasks ./tasks.yaml --no-history
-```
-
-## CI Usage
-
-Use threshold flags to turn skilleval into a PR check. `--fail-below` fails when the overall effectiveness score is too low, and `--fail-if-hurt-pct` fails when too many tasks regress. Threshold failures exit with code 1; runtime or configuration errors exit with code 2.
-
-```yaml
-name: skilleval
-
-on:
-  pull_request:
-    paths:
-      - '**/SKILL.md'
-
-jobs:
-  skilleval:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - run: npx @dileeppandiya/skilleval ./skill --tasks ./tasks.yaml --fail-below 0.3 --runs 3
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-```
-
-You can also store thresholds in `skilleval.config.json` and keep the workflow command shorter:
+You can store CI thresholds in `skilleval.config.json` and keep workflow commands shorter:
 
 ```json
 {

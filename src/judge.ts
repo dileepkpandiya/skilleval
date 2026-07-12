@@ -4,6 +4,7 @@ import { MODELS } from './config';
 import { createJudgeProvider, type JudgeProvider, type JudgeProviderName, type JudgeResult as ProviderJudgeResult } from './judges';
 import type { ParsedSkill } from './parser';
 import type { ABResult, CompareResult } from './runner';
+import type { TaskTurn } from './tasks-loader';
 
 export interface EvalTaskResult {
   taskId: string;
@@ -177,7 +178,7 @@ export async function judgeResults(
       logPositionAssignment(assignment, options);
       const outputA = swapped ? result.withSkill.output : result.withoutSkill.output;
       const outputB = swapped ? result.withoutSkill.output : result.withSkill.output;
-      const prompt = buildJudgePrompt(result.prompt, result.context ?? '');
+      const prompt = buildJudgePrompt(result.prompt, result.context ?? '', undefined, undefined, result.turns);
       let judgement: ProviderJudgeResult;
       try {
         judgement = await judgeOneTask(judge, result.taskId, prompt, outputA, outputB);
@@ -246,7 +247,7 @@ export async function judgeCompare(
       const swapped = rng() < 0.5;
       const outputA = swapped ? result.skillB.output : result.skillA.output;
       const outputB = swapped ? result.skillA.output : result.skillB.output;
-      const prompt = buildJudgePrompt(result.prompt, result.context ?? '');
+      const prompt = buildJudgePrompt(result.prompt, result.context ?? '', undefined, undefined, result.turns);
       const judgement = await judgeOneTask(judge, result.taskId, prompt, outputA, outputB);
       const winnerIsSkillB = judgement.winner === 'tie'
         ? undefined
@@ -268,9 +269,11 @@ export async function judgeCompare(
   return report;
 }
 
-export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA?: string, outputB?: string): string {
-  const basePrompt = `Task prompt: ${taskPrompt}
-Task context: ${taskContext}`;
+export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA?: string, outputB?: string, turns?: TaskTurn[]): string {
+  const basePrompt = turns === undefined
+    ? `Task prompt: ${taskPrompt}
+Task context: ${taskContext}`
+    : buildTurnJudgePrompt(taskPrompt, taskContext, turns);
   if (outputA === undefined || outputB === undefined) return basePrompt;
   return `${basePrompt}
 
@@ -279,6 +282,17 @@ ${outputA}
 
 Output B:
 ${outputB}`;
+}
+
+function buildTurnJudgePrompt(taskPrompt: string, taskContext: string, turns: TaskTurn[]): string {
+  const lastUserTurn = [...turns].reverse().find((turn) => turn.role === 'user');
+  const priorTurns = turns.slice(0, Math.max(0, turns.lastIndexOf(lastUserTurn as TaskTurn)));
+  const conversationContext = priorTurns.length === 0
+    ? ''
+    : priorTurns.map((turn) => `${turn.role === 'user' ? 'User' : 'Assistant'}: ${turn.content}`).join('\n');
+  return `Task prompt: ${lastUserTurn?.content ?? taskPrompt}
+Conversation context: ${conversationContext}
+Task context: ${taskContext}`;
 }
 
 export function scoresForJudgement(score: number, winnerIsWithSkill: boolean | undefined): { withSkillScore: number; withoutSkillScore: number } {

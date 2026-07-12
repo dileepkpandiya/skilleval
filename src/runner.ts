@@ -1,13 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from './config';
 import type { ParsedSkill } from './parser';
-import type { TaskAssertion } from './tasks-loader';
+import type { TaskAssertion, TaskTurn } from './tasks-loader';
 
 export interface Task {
   id: string;
-  prompt: string;
+  prompt?: string;
   context?: string;
   assertions?: TaskAssertion;
+  turns?: TaskTurn[];
 }
 
 export interface ABResult {
@@ -16,6 +17,7 @@ export interface ABResult {
   prompt: string;
   context?: string;
   assertions?: TaskAssertion;
+  turns?: TaskTurn[];
   withSkill: {
     output: string;
     tokensUsed: number;
@@ -37,6 +39,7 @@ export interface CompareResult {
   runIndex?: number;
   prompt: string;
   context?: string;
+  turns?: TaskTurn[];
   skillA: {
     output: string;
     tokensUsed: number;
@@ -90,9 +93,10 @@ export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string, o
       results.push({
         taskId: task.id,
         runIndex,
-        prompt: task.prompt,
+        prompt: taskPrompt(task),
         context: task.context,
         assertions: task.assertions,
+        turns: task.turns,
         withSkill,
         withoutSkill,
       });
@@ -128,8 +132,9 @@ export async function runABCompare(
       results.push({
         taskId: task.id,
         runIndex,
-        prompt: task.prompt,
+        prompt: taskPrompt(task),
         context: task.context,
+        turns: task.turns,
         skillA: skillAOutput,
         skillB: skillBOutput,
       });
@@ -147,18 +152,14 @@ async function runClaudeCall(
   model: string,
 ): Promise<RunOutput> {
   const start = Date.now();
+  const messages = buildTaskMessages(task);
 
   try {
     const message = await client.messages.create({
       model,
       max_tokens: MAX_TOKENS,
       system,
-      messages: [
-        {
-          role: 'user',
-          content: task.prompt,
-        },
-      ],
+      messages,
     });
 
     return {
@@ -179,6 +180,27 @@ async function runClaudeCall(
       latencyMs: Date.now() - start,
     };
   }
+}
+
+export function buildTaskMessages(task: Task): Array<{ role: 'user' | 'assistant'; content: string }> {
+  if (task.turns !== undefined) {
+    const lastTurn = task.turns[task.turns.length - 1];
+    if (lastTurn?.role !== 'user') {
+      throw new Error(`Task ${task.id}: last turn must be role: user`);
+    }
+    return task.turns.map((turn) => ({ role: turn.role, content: turn.content }));
+  }
+  if (task.prompt !== undefined) {
+    return [{ role: 'user', content: task.prompt }];
+  }
+  throw new Error(`Task ${task.id}: must specify either prompt or turns.`);
+}
+
+function taskPrompt(task: Task): string {
+  if (task.prompt !== undefined) return task.prompt;
+  const lastUserTurn = [...(task.turns ?? [])].reverse().find((turn) => turn.role === 'user');
+  if (lastUserTurn) return lastUserTurn.content;
+  throw new Error(`Task ${task.id}: must specify either prompt or turns.`);
 }
 
 function extractText(content: Anthropic.Messages.Message['content']): string {

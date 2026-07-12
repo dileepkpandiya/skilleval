@@ -9,7 +9,9 @@ import { createJudgeProvider, isJudgeProviderName, type JudgeProviderName } from
 import { parseSkillFile } from './parser';
 import { runAB, runABCompare } from './runner';
 import { loadTaskDefinitions, loadTasksForSkill } from './tasks-loader';
+import { estimateJudgeTokens, estimateRunnerTokens } from './token-estimator';
 import type { Task } from './runner';
+import type { ParsedSkill } from './parser';
 
 interface CliOptions {
   tasks?: string;
@@ -24,6 +26,7 @@ interface CliOptions {
   seed?: number;
   verbose?: boolean;
   noHistory?: boolean;
+  skillTarget?: string;
   failBelow?: number;
   failIfHurtPct?: number;
 }
@@ -81,6 +84,12 @@ const HISTORY_DIR = '.skilleval/history';
 export async function main(argv = process.argv): Promise<void> {
   const { Command, Option } = await import('commander');
   let handledSubcommand = false;
+  const requestedCommand = argv[2];
+  const shouldRegisterSubcommands = requestedCommand === 'diff'
+    || requestedCommand === 'compare'
+    || requestedCommand === 'help'
+    || argv.includes('--help')
+    || argv.includes('-h');
   const program = new Command()
     .name('skilleval')
     .usage('<skill-path> [options]')
@@ -96,37 +105,40 @@ export async function main(argv = process.argv): Promise<void> {
     .option('--seed <number>', 'Numeric seed for reproducible judge output ordering', parseSeed)
     .option('--verbose', 'Print debug details to stderr')
     .option('--no-history', 'Do not save eval result history')
+    .option('--skill-target <name>', 'Filter tasks by skillTarget field (overrides skill name matching)')
     .option('--fail-below <threshold>', 'Exit 1 if overall effectiveness is below threshold', parseFloatOption)
     .option('--fail-if-hurt-pct <threshold>', 'Exit 1 if percentage of hurt tasks exceeds threshold', parsePercentOption)
     .addOption(new Option('--fast').hideHelp().default(false))
     .exitOverride()
     .showHelpAfterError();
 
-  program
-    .command('diff [skill-path]')
-    .description('Show the change between the last two saved eval results')
-    .action((skillPath: string | undefined) => {
-      handledSubcommand = true;
-      runHistoryDiff(skillPath);
-    });
+  if (shouldRegisterSubcommands) {
+    program
+      .command('diff [skill-path]')
+      .description('Show the change between the last two saved eval results')
+      .action((skillPath: string | undefined) => {
+        handledSubcommand = true;
+        runHistoryDiff(skillPath);
+      });
 
-  program
-    .command('compare <skill-a-path> <skill-b-path>')
-    .description('Compare two SKILL.md versions against the same task set')
-    .option('-t, --tasks <path>', 'Path to tasks YAML file')
-    .option('-m, --model <model>', 'Claude model for A/B runner', MODELS.runner.default)
-    .option('--judge-model <model>', 'Model for the LLM judge', MODELS.judge.default)
-    .option('--judge-provider <p>', 'Judge provider: gemini-flash | claude | openai', parseJudgeProvider, 'gemini-flash')
-    .option('--cost', 'Estimate API cost before running, ask confirmation')
-    .option('--json', 'Output comparison as JSON to stdout')
-    .option('--runs <n>', 'Number of independent compare runs per task', parseRuns, 1)
-    .option('--seed <number>', 'Numeric seed for reproducible judge output ordering', parseSeed)
-    .option('--verbose', 'Print debug details to stderr')
-    .addOption(new Option('--fast').hideHelp().default(false))
-    .action(async (skillAPath: string, skillBPath: string, command: CommandWithOptions) => {
-      handledSubcommand = true;
-      await runCompareCommand(skillAPath, skillBPath, command);
-    });
+    program
+      .command('compare <skill-a-path> <skill-b-path>')
+      .description('Compare two SKILL.md versions against the same task set')
+      .option('-t, --tasks <path>', 'Path to tasks YAML file')
+      .option('-m, --model <model>', 'Claude model for A/B runner', MODELS.runner.default)
+      .option('--judge-model <model>', 'Model for the LLM judge', MODELS.judge.default)
+      .option('--judge-provider <p>', 'Judge provider: gemini-flash | claude | openai', parseJudgeProvider, 'gemini-flash')
+      .option('--cost', 'Estimate API cost before running, ask confirmation')
+      .option('--json', 'Output comparison as JSON to stdout')
+      .option('--runs <n>', 'Number of independent compare runs per task', parseRuns, 1)
+      .option('--seed <number>', 'Numeric seed for reproducible judge output ordering', parseSeed)
+      .option('--verbose', 'Print debug details to stderr')
+      .addOption(new Option('--fast').hideHelp().default(false))
+      .action(async (skillAPath: string, skillBPath: string, command: CommandWithOptions) => {
+        handledSubcommand = true;
+        await runCompareCommand(skillAPath, skillBPath, command);
+      });
+  }
 
   try {
     await program.parseAsync(argv);
@@ -169,10 +181,14 @@ export async function main(argv = process.argv): Promise<void> {
     }
 
     const skill = parseSkillFile(skillFile);
-    const tasks = loadTasksForSkill(tasksFile, skill.name);
+    const targetName = options.skillTarget ?? skill.name;
+    const tasks = loadTasksForSkill(tasksFile, targetName);
+    if (options.skillTarget !== undefined && tasks.length === 0) {
+      throw new Error(`No tasks found matching skillTarget: "${options.skillTarget}". Check your tasks.yaml skillTarget fields.`);
+    }
 
     if (options.cost) {
-      const shouldProceed = await confirmCost(tasks.length, runs, runnerModel, judgeModel, judgeProviderName);
+      const shouldProceed = await confirmCost(tasks, runs, runnerModel, judgeModel, judgeProviderName, skill);
       if (!shouldProceed) return;
     }
 
@@ -284,7 +300,7 @@ async function runCompareCommand(
     console.error('⚠ Running compare with --runs 1 (default). Confidence will show as UNRATED.\nUse --runs 3 for meaningful confidence scoring.');
   }
   if (options.cost) {
-    const shouldProceed = await confirmCost(tasks.length, runs, runnerModel, judgeModel, judgeProviderName);
+    const shouldProceed = await confirmCost(tasks, runs, runnerModel, judgeModel, judgeProviderName, skillB);
     if (!shouldProceed) return;
   }
 
@@ -476,10 +492,12 @@ function defaultJudgeModel(judgeProvider: JudgeProviderName, usedDefault: boolea
   return model ?? judgeProvider;
 }
 
-async function confirmCost(taskCount: number, runs: number, runnerModel: string, judgeModel: string, judgeProvider: JudgeProviderName): Promise<boolean> {
-  const estimate = estimateCost(taskCount, runs, judgeProvider);
+async function confirmCost(tasks: Task[], runs: number, runnerModel: string, judgeModel: string, judgeProvider: JudgeProviderName, skill: ParsedSkill): Promise<boolean> {
+  const estimate = estimateCost(tasks, runs, judgeProvider, skill);
+  const taskCount = tasks.length;
   console.log(`Estimated cost for ${taskCount} tasks${runs > 1 ? ` x ${runs} runs` : ''}:`);
   console.log(`   Runner (${runnerModel}):  $${estimate.runner.toFixed(3)}`);
+  console.log(`   Estimated tokens: ~${estimate.runnerInputTokens} input, ~${estimate.runnerOutputTokens} output (runner)`);
   console.log(`   Judge  (${judgeModel}):   $${estimate.judge.toFixed(3)}`);
   console.log(`   Total:                       $${estimate.total.toFixed(3)}`);
   console.log(' Proceed? (y/n)');
@@ -498,21 +516,25 @@ async function confirmCost(taskCount: number, runs: number, runnerModel: string,
   }
 }
 
-function estimateCost(taskCount: number, runs: number, judgeProvider: JudgeProviderName): { runner: number; judge: number; total: number } {
-  const runnerInputTokens = taskCount * runs * 800 * 2;
-  const runnerOutputTokens = taskCount * runs * 600 * 2;
-  const judgeInputTokens = taskCount * runs * 1200;
-  const judgeOutputTokens = taskCount * runs * 80;
+function estimateCost(tasks: Task[], runs: number, judgeProvider: JudgeProviderName, skill: ParsedSkill): { runner: number; judge: number; total: number; runnerInputTokens: number; runnerOutputTokens: number } {
+  const runnerEstimate = estimateRunnerTokens(skill.instructionBody, tasks, runs);
+  const judgeEstimate = estimateJudgeTokens(tasks, skill.instructionBody, runs);
   const runner = (
-    runnerInputTokens * COSTS_PER_MILLION.runner.input
-    + runnerOutputTokens * COSTS_PER_MILLION.runner.output
+    runnerEstimate.inputTokens * COSTS_PER_MILLION.runner.input
+    + runnerEstimate.outputTokens * COSTS_PER_MILLION.runner.output
   ) / 1_000_000;
   const judgeRates = COSTS_PER_MILLION.judge[judgeProvider];
   const judge = (
-    judgeInputTokens * judgeRates.input
-    + judgeOutputTokens * judgeRates.output
+    judgeEstimate.inputTokens * judgeRates.input
+    + judgeEstimate.outputTokens * judgeRates.output
   ) / 1_000_000;
-  return { runner, judge, total: runner + judge };
+  return {
+    runner,
+    judge,
+    total: runner + judge,
+    runnerInputTokens: runnerEstimate.inputTokens,
+    runnerOutputTokens: runnerEstimate.outputTokens,
+  };
 }
 
 function scaffoldSkill(targetPath: string): void {

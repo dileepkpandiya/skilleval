@@ -7,6 +7,11 @@ export interface TaskDefinition extends Task {
   skillTarget?: string;
 }
 
+export interface TaskTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface TaskAssertion {
   must_contain?: string[];
   must_not_contain?: string[];
@@ -20,13 +25,13 @@ interface TasksFile {
 }
 
 export function loadTasks(filePath: string): Task[] {
-  return loadTaskDefinitions(filePath).map(({ id, prompt, context, assertions }) => ({ id, prompt, context, assertions }));
+  return loadTaskDefinitions(filePath).map(({ id, prompt, context, assertions, turns }) => ({ id, prompt, context, assertions, turns }));
 }
 
 export function loadTasksForSkill(filePath: string, skillName: string): Task[] {
   return loadTaskDefinitions(filePath)
     .filter((task) => task.skillTarget === undefined || task.skillTarget === skillName)
-    .map(({ id, prompt, context, assertions }) => ({ id, prompt, context, assertions }));
+    .map(({ id, prompt, context, assertions, turns }) => ({ id, prompt, context, assertions, turns }));
 }
 
 export function loadTaskDefinitions(filePath: string): TaskDefinition[] {
@@ -47,12 +52,23 @@ function parseTask(value: unknown, rawPath: string, index: number): TaskDefiniti
   }
 
   const candidate = value as Record<string, unknown>;
+  const id = requireString(candidate.id, 'id', rawPath, index);
+  const prompt = optionalPrompt(candidate.prompt, rawPath, index);
+  const turns = parseTurns(candidate.turns, id, rawPath, index);
+  if (prompt !== undefined && turns !== undefined) {
+    throw new Error(`Task ${id}: cannot specify both prompt and turns. Use turns for multi-turn tasks, prompt for single-turn.`);
+  }
+  if (prompt === undefined && turns === undefined) {
+    throw new Error(`Task ${id}: must specify either prompt or turns.`);
+  }
+
   return {
-    id: requireString(candidate.id, 'id', rawPath, index),
+    id,
     skillTarget: optionalString(candidate.skillTarget, 'skillTarget', rawPath, index),
-    prompt: requireString(candidate.prompt, 'prompt', rawPath, index),
+    prompt,
     context: optionalString(candidate.context, 'context', rawPath, index),
     assertions: parseAssertions(candidate.assertions, rawPath, index),
+    turns,
   };
 }
 
@@ -67,6 +83,14 @@ function optionalString(value: unknown, field: string, rawPath: string, index: n
   if (value === undefined) return undefined;
   if (typeof value !== 'string') {
     throw new Error(`Invalid task in ${rawPath} at index ${index}: '${field}' must be a string when provided`);
+  }
+  return value;
+}
+
+function optionalPrompt(value: unknown, rawPath: string, index: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Invalid task in ${rawPath} at index ${index}: 'prompt' must be a non-empty string when provided`);
   }
   return value;
 }
@@ -92,6 +116,30 @@ function parseAssertions(value: unknown, rawPath: string, index: number): TaskAs
   if (maxLength !== undefined) parsed.max_length = maxLength;
 
   return parsed;
+}
+
+function parseTurns(value: unknown, taskId: string, rawPath: string, index: number): TaskTurn[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`Invalid task in ${rawPath} at index ${index}: 'turns' must be an array when provided`);
+  }
+
+  return value.map((turn, turnIndex) => {
+    if (turn === null || typeof turn !== 'object' || Array.isArray(turn)) {
+      throw new Error(`Invalid task ${taskId} turn ${turnIndex}: expected a mapping`);
+    }
+    const candidate = turn as Record<string, unknown>;
+    if (candidate.role !== 'user' && candidate.role !== 'assistant') {
+      throw new Error(`Invalid task ${taskId} turn ${turnIndex}: role must be 'user' or 'assistant'`);
+    }
+    if (typeof candidate.content !== 'string' || candidate.content.trim() === '') {
+      throw new Error(`Invalid task ${taskId} turn ${turnIndex}: content must be a non-empty string`);
+    }
+    return {
+      role: candidate.role,
+      content: candidate.content,
+    };
+  });
 }
 
 function optionalStringArray(value: unknown, field: string, rawPath: string, index: number): string[] | undefined {

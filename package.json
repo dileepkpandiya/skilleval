@@ -1,7 +1,7 @@
 {
   "name": "@dileeppandiya/skilleval",
-  "version": "0.2.1",
-  "description": "Measure whether Claude SKILL.md files improve outputs — blind A/B testing, deterministic assertions, run history, skill comparison, and CI gating in under 2 minutes",
+  "version": "0.3.0",
+  "description": "Measure whether Claude SKILL.md files improve outputs — blind A/B testing, deterministic assertions, multi-turn tasks, skill comparison, run history, and CI gating in under 2 minutes",
   "bin": {
     "skilleval": "bin/skilleval.js"
   },
@@ -19,7 +19,9 @@
     "cli",
     "typescript",
     "a-b-testing",
-    "ci-cd"
+    "ci-cd",
+    "multi-turn",
+    "skill-testing"
   ],
   "files": [
     "bin/skilleval.js",
