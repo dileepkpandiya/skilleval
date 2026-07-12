@@ -1,0 +1,31 @@
+calibration:
+  - id: calib-001
+    task: "Review this TypeScript function: function parseUser(input: string) { const data = JSON.parse(input); return { id: data.id, email: data.email.toLowerCase() }; }"
+    context: "Strict TypeScript, request bodies from an HTTP API."
+    outputA: "Looks fine. You may want to add a test for invalid JSON."
+    outputB: "This can throw on invalid JSON, JSON.parse can return non-object/null values, data.email may be missing or non-string before toLowerCase, and the return shape should be validated with explicit TypeScript types before use."
+    expectedWinner: "B"
+  - id: calib-002
+    task: "Review this query builder: function findUsers(sort: string) { return db.query(`select * from users order by ${sort}`); }"
+    context: "sort comes from a public query parameter."
+    outputA: "This is vulnerable to SQL injection through the ORDER BY clause. Restrict sort to an allowlist of known column names and directions, then map those values to static SQL fragments."
+    outputB: "Consider renaming sort to sortBy and adding comments. The code is short and readable."
+    expectedWinner: "A"
+  - id: calib-003
+    task: "Design an endpoint for retry-safe payment capture."
+    context: "Clients retry after network timeouts. The payment provider supports idempotency keys."
+    outputA: "POST /capturePayment with orderId and amount. Return success or failure."
+    outputB: "Use POST /orders/{orderId}/captures with a required Idempotency-Key header, persist request fingerprints and first responses, return 202 for pending provider settlement, and document 409 for key reuse with different parameters."
+    expectedWinner: "B"
+  - id: calib-004
+    task: "Review this endpoint: POST /updateUser with body { userId, changes }."
+    context: "Public REST API used by third-party integrations."
+    outputA: "Prefer PATCH /users/{userId}, define an allowlist schema for mutable fields, use typed validation errors, preserve backward compatibility with additive fields, and return the updated resource or a documented 204."
+    outputB: "POST /updateUser is okay. Make sure the server updates the user."
+    expectedWinner: "A"
+  - id: calib-005
+    task: "Write tests for a retry scheduler that uses exponential backoff."
+    context: "The scheduler accepts a clock dependency and caps delays after five attempts."
+    outputA: "Test that retries happen. Also test errors."
+    outputB: "Use a fake clock and table-driven cases for attempts 1-5, verify the capped delay after attempt 5, assert no real timers are used, cover cancellation, and include a regression test for the previous off-by-one delay bug."
+    expectedWinner: "B"

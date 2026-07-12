@@ -91,8 +91,8 @@ export GEMINI_API_KEY=your-gemini-key
 Get a free key at: https://aistudio.google.com
 
 Supported judge providers:
-- `gemini-flash` uses `GEMINI_API_KEY` and is the default low-cost judge.
-- `claude` uses `ANTHROPIC_API_KEY`.
+- `gemini-flash` uses `GEMINI_API_KEY` and is the default low-cost judge. Gemini Flash reliability can vary by model/version; skilleval requests native JSON output, but skipped judge results are still reported explicitly if parsing fails after retries.
+- `claude` uses `ANTHROPIC_API_KEY` and is available as a more consistent, though pricier, fallback judge.
 - `openai` uses `OPENAI_API_KEY`.
 
 Using Claude as judge:
@@ -100,6 +100,14 @@ Using Claude as judge:
 ```bash
 skilleval ./my-skill --judge-provider claude
 ```
+
+To verify Gemini reliability on your account before trusting it in CI, run the documented 10-run check:
+
+```bash
+./scripts/gemini-reliability-test.sh
+```
+
+It runs the same two-task eval against Gemini 10 times and fails if the skipped-task rate is 10% or higher.
 
 ## Writing test tasks
 

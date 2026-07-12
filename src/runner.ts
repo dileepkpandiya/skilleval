@@ -1,11 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { MODELS } from './config';
 import type { ParsedSkill } from './parser';
+import type { TaskAssertion } from './tasks-loader';
 
 export interface Task {
   id: string;
   prompt: string;
   context?: string;
+  assertions?: TaskAssertion;
 }
 
 export interface ABResult {
@@ -13,6 +15,7 @@ export interface ABResult {
   runIndex?: number;
   prompt: string;
   context?: string;
+  assertions?: TaskAssertion;
   withSkill: {
     output: string;
     tokensUsed: number;
@@ -68,6 +71,7 @@ export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string, o
         runIndex,
         prompt: task.prompt,
         context: task.context,
+        assertions: task.assertions,
         withSkill,
         withoutSkill,
       });

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import yaml from 'js-yaml';
+import { load as loadYaml } from 'js-yaml';
 
 export interface ParsedSkill {
   name: string;
@@ -27,8 +27,7 @@ export function parseSkillFile(filePath: string): ParsedSkill {
   try {
     contents = readFileSync(rawPath, 'utf8');
   } catch (err) {
-    console.error(`Error: SKILL.md not found at ${rawPath}`);
-    process.exit(1);
+    throw new Error(`SKILL.md not found at ${rawPath}`);
   }
 
   if (!contents.startsWith('---')) {
@@ -44,7 +43,7 @@ export function parseSkillFile(filePath: string): ParsedSkill {
   let frontmatter: Frontmatter;
 
   try {
-    const parsed = yaml.load(frontmatterText);
+    const parsed = loadYaml(frontmatterText);
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('frontmatter must be a YAML mapping');
     }

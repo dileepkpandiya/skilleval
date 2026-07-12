@@ -3,7 +3,7 @@ import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { MODELS } from './config';
-import { judgeResults } from './judge';
+import { buildMultiRunReport, judgeResults, printEvalReport, printMultiRunEvalReport, type EvalReport, type MultiRunEvalReport } from './judge';
 import { createJudgeProvider, isJudgeProviderName, type JudgeProviderName } from './judges';
 import { parseSkillFile } from './parser';
 import { runAB } from './runner';
@@ -113,6 +113,9 @@ export async function main(argv = process.argv): Promise<void> {
     if (fast) {
       console.error('[fast mode] using haiku + gemini-flash - results are indicative only');
     }
+    if (runs === 1) {
+      console.error('⚠ Running with --runs 1 (default). Confidence will show as UNRATED.\nUse --runs 3 for meaningful confidence scoring.');
+    }
 
     const skill = parseSkillFile(skillFile);
     const tasks = loadTasksForSkill(tasksFile, skill.name);
@@ -125,26 +128,42 @@ export async function main(argv = process.argv): Promise<void> {
     const judge = createJudgeProvider(judgeProviderName);
     validateRunnerApiKey();
 
-    const results = await runAB(skill, tasks, process.env.ANTHROPIC_API_KEY as string, {
-      model: runnerModel,
-      runs,
-    });
-    const report = await judgeResults(skill, results, {
-      judgeProvider: judgeProviderName,
-      judge,
-      judgeModel,
-      runnerModel,
-      print: !options.json,
-      runs,
-      seed: options.seed,
-      verbose: options.verbose,
-    });
-
-    if (options.json) {
-      console.log(JSON.stringify(report, null, 2));
+    const reports: EvalReport[] = [];
+    for (let runIndex = 0; runIndex < runs; runIndex += 1) {
+      const results = await runAB(skill, tasks, process.env.ANTHROPIC_API_KEY as string, {
+        model: runnerModel,
+      });
+      reports.push(await judgeResults(skill, results, {
+        judgeProvider: judgeProviderName,
+        judge,
+        judgeModel,
+        runnerModel,
+        print: false,
+        seed: options.seed,
+        verbose: options.verbose,
+      }));
     }
 
-    const gateResult = evaluateGate(report.avgDiff, report.tasksHurt, report.totalTasks, thresholds);
+    let outputReport: EvalReport | MultiRunEvalReport;
+    if (!options.json) {
+      if (runs === 1) {
+        const report = reports[0];
+        outputReport = report;
+        printEvalReport(report);
+      } else {
+        const report = buildMultiRunReport(reports);
+        outputReport = report;
+        printMultiRunEvalReport(report);
+      }
+    } else {
+      outputReport = runs === 1 ? reports[0] : buildMultiRunReport(reports);
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(outputReport, null, 2));
+    }
+
+    const gateResult = evaluateGate(outputReport.avgDiff, outputReport.tasksHurt, outputReport.totalTasks, thresholds);
     if (gateResult) {
       if (gateResult.passed) {
         console.log(gateResult.message);

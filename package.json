@@ -9,11 +9,8 @@
     "dev": "ts-node src/cli.ts",
     "build": "tsc",
     "prepublishOnly": "tsc",
-    "parse-test": "ts-node src/parse-test.ts",
-    "run-test": "ts-node src/run-test.ts",
-    "judge-test": "ts-node src/judge-test.ts",
-    "unit-test": "ts-node src/judge-unit-test.ts",
-    "judges-test": "ts-node src/judges-unit-test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,7 +24,8 @@
   "devDependencies": {
     "@types/node": "latest",
     "ts-node": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "vitest": "^3.2.7"
   },
   "license": "MIT"
 }

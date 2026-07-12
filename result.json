@@ -1,0 +1,38 @@
+{
+  "skillName": "api-design",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 3,
+  "avgDiff": 2.4,
+  "tasksImproved": 3,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.6,
+      "withoutSkillScore": 0.4,
+      "diff": 2.2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is more complete as it explicitly addresses the audit logging requirement from the task context and provides a highly practical design with realistic trade-offs, whereas Output B misses audit logging entirely."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.8,
+      "withoutSkillScore": 0.3,
+      "diff": 2.5,
+      "confidence": "HIGH",
+      "reasoning": "Output B provides a more sophisticated and realistic API design review, specifically addressing long-term compatibility through advanced concepts like RFC 7396 (merge-patch), idempotency keys, and the crucial strict vs. permissive unknown fields tradeoff."
+    },
+    {
+      "taskId": "task-003",
+      "withSkillScore": 2.8,
+      "withoutSkillScore": 0.3,
+      "diff": 2.5,
+      "confidence": "HIGH",
+      "reasoning": "Output B is a complete and highly professional API design that addresses critical real-world edge cases—such as using minor currency units to avoid float precision issues, explicit error handling, and security scoping—whereas Output A is incomplete and uses less robust design patterns."
+    }
+  ],
+  "estimatedCost": 0.1533342
+}

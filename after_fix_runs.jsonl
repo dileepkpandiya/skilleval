@@ -1,0 +1,230 @@
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because it recommends idiomatic Zod validation for an API boundary rather than Output A's excessively verbose manual rewrite, and it avoids Output A's weak finding regarding the already-typed 'string' input parameter."
+    }
+  ],
+  "estimatedCost": 0.0418355
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because it recommends using a schema validation library (Zod) which is the industry standard for this task, whereas Output B performs an over-engineered manual rewrite that changes the function's signature and introduces significant boilerplate."
+    }
+  ],
+  "estimatedCost": 0.0408321
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": -2,
+  "tasksImproved": 0,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because Output B incorrectly claims the parameter type is implicit when it is explicitly typed as a string in the prompt, and Output A's recommendation to use Zod is highly idiomatic for a TypeScript HTTP API."
+    }
+  ],
+  "estimatedCost": 0.0375036
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": 0,
+  "tasksImproved": 1,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A provides a much cleaner, more cohesive, and production-ready rewrite that correctly handles TypeScript's strict mode, and its recommendation of Zod is highly relevant and idiomatic for modern TypeScript HTTP APIs."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because Output B introduces a TypeScript type mismatch between its suggested error-handling return value (returning `id: null`) and its suggested explicit return type (typing `id` as `string` under strict TypeScript), whereas Output A correctly handles strict TypeScript catch variables and maintains type consistency."
+    }
+  ],
+  "estimatedCost": 0.0432817
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because it tailors its feedback to the 'strict TypeScript' context by correctly identifying the need for `catch (err: unknown)` and defining a proper interface, while avoiding Output A's redundant runtime input validation on a strictly typed parameter."
+    }
+  ],
+  "estimatedCost": 0.043028500000000004
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": 1.8,
+  "tasksImproved": 2,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.8,
+      "withoutSkillScore": 0.3,
+      "diff": 2.5,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because it provides concrete, reproducible failure cases, assigns clear severity levels to each finding, and explains the TypeScript-specific implications of implicit 'any' propagation in strict mode much more effectively than Output A."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2,
+      "withoutSkillScore": 1,
+      "diff": 1,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because it proposes a discriminated union for the return type, which is a best practice in strict TypeScript for API responses, whereas Output A uses less ideal optional and nullable fields."
+    }
+  ],
+  "estimatedCost": 0.0420948
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because its suggested TypeScript types are correct and compile under strict mode, whereas Output A introduces a TypeScript error by returning `id: null` for a property typed as `string` under strict null checks."
+    }
+  ],
+  "estimatedCost": 0.0430325
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": 0,
+  "tasksImproved": 1,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because Output B suggests using the pipeline operator (`|>`) in its Zod example, which is a non-standard TC39 proposal not supported by TypeScript, whereas Output A provides fully valid, standard TypeScript code."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A provides a more accurate and nuanced analysis under strict TypeScript, correctly identifies the risk of database-generated IDs, and avoids the unnecessary rewrites and hallucinated input validation issues present in Output B."
+    }
+  ],
+  "estimatedCost": 0.042991800000000004
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": -2.2,
+  "tasksImproved": 0,
+  "tasksHurt": 2,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 0.3,
+      "withoutSkillScore": 2.8,
+      "diff": -2.5,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because its code rewrite is safer and more robust, it correctly identifies the architectural smell of parsing strings in an HTTP API context, and it provides an extremely practical Zod-based alternative which is the industry standard for this task."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because its error handling and return type suggestions are specifically tailored to the frontend API context, returning a consistent `{ ok: false }` structure rather than throwing an error as Output A suggests."
+    }
+  ],
+  "estimatedCost": 0.0392564
+}

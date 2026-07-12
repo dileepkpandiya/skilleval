@@ -11,6 +11,10 @@ tasks:
     skillTarget: api-design
     prompt: "Design an API endpoint for bulk inviting users to a workspace, including request and response shapes."
     context: "The product has workspaces, email invitations, role assignment, and audit logging."
+    assertions:
+      must_contain:
+        - "POST"
+      min_length: 100
   - id: task-004
     skillTarget: api-design
     prompt: "Review this endpoint design: POST /updateUser with body { userId, changes }. Suggest improvements for long-term compatibility."
@@ -19,3 +23,8 @@ tasks:
     skillTarget: test-writer
     prompt: "Write unit tests for a function that validates password reset tokens, including expired, reused, and missing-token cases."
     context: "The project uses Jest with TypeScript and avoids network or real-time dependencies in unit tests."
+    assertions:
+      must_contain:
+        - "expired"
+        - "reused"
+      min_length: 100

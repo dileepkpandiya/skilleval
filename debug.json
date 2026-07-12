@@ -1,0 +1,30 @@
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": 1.8,
+  "tasksImproved": 2,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because it provides a highly practical and modern solution using Zod, which is the industry standard for this scenario, whereas Output B writes a verbose, custom validation implementation that adds unnecessary boilerplate."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.3,
+      "withoutSkillScore": 0.8,
+      "diff": 1.5,
+      "confidence": "HIGH",
+      "reasoning": "Output B provides a much stronger TypeScript analysis, correctly recommending a discriminated union for the return type which is best practice in strict TypeScript, whereas Output A uses less ideal optional/nullable fields."
+    }
+  ],
+  "estimatedCost": 0.0444477
+}

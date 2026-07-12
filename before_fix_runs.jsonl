@@ -1,0 +1,200 @@
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": -2,
+  "tasksImproved": 0,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because its error handling and return type suggestions align perfectly with the context of returning API responses consumed by a frontend, whereas Output B suggests throwing an error which breaks the established return-object pattern."
+    }
+  ],
+  "estimatedCost": 0.0393406
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because it better addresses the 'strict TypeScript' context by correctly identifying that the error in the catch block should be typed as `unknown` and by noting that the `id` return type should match `Order.id` rather than assuming it is a string."
+    }
+  ],
+  "estimatedCost": 0.040976
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": 2,
+  "tasksImproved": 1,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because it focuses strictly on verifiable issues and provides a more accurate analysis of strict TypeScript constraints, whereas Output B introduces an unnecessary rewrite and hallucinates an input validation issue on a typed object."
+    }
+  ],
+  "estimatedCost": 0.0436601
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 0,
+  "avgDiff": 0,
+  "tasksImproved": 0,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [],
+  "estimatedCost": 0.04093
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 0,
+  "avgDiff": 0,
+  "tasksImproved": 0,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [],
+  "estimatedCost": 0.0427561
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 0,
+  "avgDiff": 0,
+  "tasksImproved": 0,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [],
+  "estimatedCost": 0.0436067
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": -0.2,
+  "tasksImproved": 1,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because Output B contains a false finding, incorrectly claiming that the parameter type is implicit and that the compiler won't catch non-string inputs, whereas the prompt's function signature explicitly types `input` as a `string`."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 2.3,
+      "withoutSkillScore": 0.8,
+      "diff": 1.5,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because it better respects the strict TypeScript context by explaining the need for `catch (err: unknown)`, whereas Output B suggests redundant runtime validation on `order.id` which likely contradicts the static `Order` type definition."
+    }
+  ],
+  "estimatedCost": 0.043235699999999995
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 0,
+  "avgDiff": 0,
+  "tasksImproved": 0,
+  "tasksHurt": 0,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [],
+  "estimatedCost": 0.046904
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 2,
+  "avgDiff": 0,
+  "tasksImproved": 1,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-001",
+      "withSkillScore": 2.5,
+      "withoutSkillScore": 0.5,
+      "diff": 2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is more concise, avoids over-engineering the solution with custom error classes, and provides a highly practical alternative using Zod, which is the industry standard for validating HTTP payloads in TypeScript."
+    },
+    {
+      "taskId": "task-002",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output B is superior because its code suggestions are highly actionable and tailored to the frontend context, providing a complete union type for the API contract and a practical error-handling implementation rather than just re-throwing the error."
+    }
+  ],
+  "estimatedCost": 0.0419302
+}
+{
+  "skillName": "code-review",
+  "model": "claude-sonnet-4-6",
+  "judgeModel": "gemini-3.5-flash",
+  "totalTasks": 1,
+  "avgDiff": -2,
+  "tasksImproved": 0,
+  "tasksHurt": 1,
+  "tasksNeutral": 0,
+  "overallConfidence": "HIGH",
+  "results": [
+    {
+      "taskId": "task-002",
+      "withSkillScore": 0.5,
+      "withoutSkillScore": 2.5,
+      "diff": -2,
+      "confidence": "HIGH",
+      "reasoning": "Output A is superior because its error handling and explicit return types are consistent and utilize a clean discriminated union, whereas Output B has inconsistencies between its proposed error-handling code (which throws an error) and its type signatures."
+    }
+  ],
+  "estimatedCost": 0.0450132
+}
