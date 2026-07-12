@@ -32,9 +32,30 @@ export interface ABResult {
   };
 }
 
+export interface CompareResult {
+  taskId: string;
+  runIndex?: number;
+  prompt: string;
+  context?: string;
+  skillA: {
+    output: string;
+    tokensUsed: number;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+  };
+  skillB: {
+    output: string;
+    tokensUsed: number;
+    inputTokens: number;
+    outputTokens: number;
+    latencyMs: number;
+  };
+}
+
 type RunOutput = ABResult['withSkill'];
 
-interface RunOptions {
+export interface RunOptions {
   model?: string;
   runs?: number;
 }
@@ -81,11 +102,48 @@ export async function runAB(skill: ParsedSkill, tasks: Task[], apiKey: string, o
   return results;
 }
 
+export async function runABCompare(
+  skillA: ParsedSkill,
+  skillB: ParsedSkill,
+  tasks: Task[],
+  apiKey: string,
+  options: RunOptions = {},
+): Promise<CompareResult[]> {
+  const client = new Anthropic({ apiKey });
+  const results: CompareResult[] = [];
+  const model = options.model ?? MODEL;
+  const runs = options.runs ?? 1;
+
+  for (const task of tasks) {
+    const context = task.context ?? '';
+    const skillASystem = `[SKILL: ${skillA.name}]\n\n${skillA.instructionBody}\n\n---\n\n${context}`;
+    const skillBSystem = `[SKILL: ${skillB.name}]\n\n${skillB.instructionBody}\n\n---\n\n${context}`;
+
+    for (let runIndex = 0; runIndex < runs; runIndex += 1) {
+      const [skillAOutput, skillBOutput] = await Promise.all([
+        runClaudeCall(client, task, skillASystem, 'skill A', model),
+        runClaudeCall(client, task, skillBSystem, 'skill B', model),
+      ]);
+
+      results.push({
+        taskId: task.id,
+        runIndex,
+        prompt: task.prompt,
+        context: task.context,
+        skillA: skillAOutput,
+        skillB: skillBOutput,
+      });
+    }
+  }
+
+  return results;
+}
+
 async function runClaudeCall(
   client: Anthropic,
   task: Task,
   system: string,
-  label: 'with skill' | 'without skill',
+  label: 'with skill' | 'without skill' | 'skill A' | 'skill B',
   model: string,
 ): Promise<RunOutput> {
   const start = Date.now();

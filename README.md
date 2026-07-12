@@ -73,6 +73,22 @@ Run against a sample skill included in this repo:
 skilleval ./samples/api-design --tasks ./tasks/sample-tasks.yaml
 ```
 
+## CI Usage
+
+Add to any GitHub Actions workflow:
+
+```yaml
+- uses: dileepkpandiya/skilleval@main
+  with:
+    skill-path: ./my-skill
+    tasks: ./tasks/sample-tasks.yaml
+    fail-below: '0.3'
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+    gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+```
+
+Full example in `.github/workflows/skilleval-example.yml`.
+
 ## Setup
 
 skilleval needs a Claude runner key and one judge key:
@@ -178,6 +194,7 @@ Options:
                           (default: 1)
   --seed <number>         Numeric seed for reproducible judge output ordering
   --verbose               Print debug details to stderr
+  --no-history            Do not save eval result history
   --fail-below <n>        Exit 1 if overall effectiveness is below threshold
   --fail-if-hurt-pct <n>  Exit 1 if percentage of hurt tasks exceeds threshold
   --cost                  Estimate API cost before running, ask confirmation
@@ -204,11 +221,43 @@ Estimate cost before running:
 skilleval ./my-skill --cost
 ```
 
+Compare two skill versions directly:
+
+```bash
+skilleval compare ./skill-v1 ./skill-v2 --tasks ./tasks.yaml
+```
+
 ## Multi-run averaging
 
 By default, skilleval runs each task once and marks confidence as `UNRATED` because stability cannot be inferred from a single sample. Use `--runs N` when judge scores are noisy, a skill is near the pass/fail line, or before trusting a score in CI.
 
 When `N > 1`, skilleval reruns the full skill-on and skill-off eval loop sequentially, judges each paired run, and reports mean, median, and standard deviation across the collected diffs. JSON output keeps each individual run under `runs` and adds an `aggregate` object. Pair it with `--seed <number>` when you need reproducible output ordering while debugging. Add `--verbose` to log which side received the skill-assisted output for each judged pair.
+
+## Compare Skill Versions
+
+Use `compare` when you want to test whether an edited skill is better than the previous version without manually diffing separate eval runs:
+
+```bash
+skilleval compare ./skill-v1 ./skill-v2 --tasks ./tasks.yaml
+```
+
+The report is scored as `skill-v2 - skill-v1`, so a positive average diff means the second skill path performed better. Use `--json` for machine-readable output or `--runs 3` for repeated-run confidence.
+
+## History & Diff
+
+skilleval auto-saves results to `.skilleval/history/` after each run.
+
+View what changed since your last run:
+
+```bash
+skilleval diff ./my-skill
+```
+
+Use `--no-history` to skip saving, for example in CI:
+
+```bash
+skilleval ./my-skill --tasks ./tasks.yaml --no-history
+```
 
 ## CI Usage
 

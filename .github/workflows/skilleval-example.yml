@@ -1,0 +1,24 @@
+name: Skill Quality Gate
+
+on:
+  pull_request:
+    paths:
+      - '**/SKILL.md'
+      - '**/tasks.yaml'
+
+jobs:
+  skilleval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Evaluate skill quality
+        uses: dileepkpandiya/skilleval@main
+        with:
+          skill-path: ./samples/api-design
+          tasks: ./tasks/sample-tasks.yaml
+          fail-below: '0.3'
+          fail-if-hurt-pct: '50'
+          judge-provider: gemini-flash
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

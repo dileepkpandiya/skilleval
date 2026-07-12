@@ -3,7 +3,7 @@ import { runAssertions } from './assertions';
 import { MODELS } from './config';
 import { createJudgeProvider, type JudgeProvider, type JudgeProviderName, type JudgeResult as ProviderJudgeResult } from './judges';
 import type { ParsedSkill } from './parser';
-import type { ABResult } from './runner';
+import type { ABResult, CompareResult } from './runner';
 
 export interface EvalTaskResult {
   taskId: string;
@@ -83,6 +83,30 @@ export interface MultiRunEvalReport {
   aggregate: EvalAggregate;
   results: EvalTaskResult[];
   runs: EvalRunReport[];
+  estimatedCost: number;
+}
+
+export interface CompareTaskResult {
+  taskId: string;
+  skillAScore: number;
+  skillBScore: number;
+  diff: number;
+  confidence: ResultConfidence;
+  reasoning: string;
+}
+
+export interface CompareReport {
+  skillAName: string;
+  skillBName: string;
+  model: string;
+  judgeModel: string;
+  totalTasks: number;
+  avgDiff: number;
+  tasksAWon: number;
+  tasksBWon: number;
+  tasksNeutral: number;
+  overallWinner: 'A' | 'B' | 'tie';
+  results: CompareTaskResult[];
   estimatedCost: number;
 }
 
@@ -198,6 +222,52 @@ export async function judgeResults(
   return report;
 }
 
+export async function judgeCompare(
+  skillA: ParsedSkill,
+  skillB: ParsedSkill,
+  results: CompareResult[],
+  options: JudgeOptions = {},
+): Promise<CompareReport> {
+  const providerName = options.judgeProvider ?? 'gemini-flash';
+  const judge = options.judge ?? createJudgeProvider(providerName);
+  const judgeModel = options.judgeModel ?? providerName;
+  const rng = createRng(options.seed);
+  const judged: CompareTaskResult[] = [];
+
+  for (const taskResults of groupCompareResultsByTask(results)) {
+    const samples: Array<{
+      skillAScore: number;
+      skillBScore: number;
+      diff: number;
+      reasoning: string;
+    }> = [];
+
+    for (const result of taskResults) {
+      const swapped = rng() < 0.5;
+      const outputA = swapped ? result.skillB.output : result.skillA.output;
+      const outputB = swapped ? result.skillA.output : result.skillB.output;
+      const prompt = buildJudgePrompt(result.prompt, result.context ?? '');
+      const judgement = await judgeOneTask(judge, result.taskId, prompt, outputA, outputB);
+      const winnerIsSkillB = judgement.winner === 'tie'
+        ? undefined
+        : (swapped ? judgement.winner === 'A' : judgement.winner === 'B');
+      const { withSkillScore: skillBScore, withoutSkillScore: skillAScore } = scoresForJudgement(judgement.margin, winnerIsSkillB);
+      samples.push({
+        skillAScore,
+        skillBScore,
+        diff: round1(skillBScore - skillAScore),
+        reasoning: judgement.rationale,
+      });
+    }
+
+    judged.push(buildCompareTaskResult(taskResults[0].taskId, samples));
+  }
+
+  const report = buildCompareReport(skillA, skillB, results, judged, { ...options, judgeModel });
+  if (options.print ?? true) printCompareReport(report);
+  return report;
+}
+
 export function buildJudgePrompt(taskPrompt: string, taskContext: string, outputA?: string, outputB?: string): string {
   const basePrompt = `Task prompt: ${taskPrompt}
 Task context: ${taskContext}`;
@@ -286,6 +356,10 @@ function buildReport(
 
 function sumTokenField(results: ABResult[], field: 'inputTokens' | 'outputTokens'): number {
   return results.reduce((sum, result) => sum + (result.withSkill[field] ?? 0) + (result.withoutSkill[field] ?? 0), 0);
+}
+
+function sumCompareTokenField(results: CompareResult[], field: 'inputTokens' | 'outputTokens'): number {
+  return results.reduce((sum, result) => sum + (result.skillA[field] ?? 0) + (result.skillB[field] ?? 0), 0);
 }
 
 export function printEvalReport(report: EvalReport): void {
@@ -431,6 +505,29 @@ export function printMultiRunEvalReport(report: MultiRunEvalReport): void {
   console.log(line);
 }
 
+export function printCompareReport(report: CompareReport): void {
+  const line = '──────────────────────────────────────────────────';
+  console.log('── skilleval compare ─────────────────────────────');
+  console.log(` ${report.skillAName}  vs  ${report.skillBName}  |  ${report.totalTasks} tasks`);
+  console.log(line);
+  const winner = report.overallWinner === 'A'
+    ? report.skillAName
+    : report.overallWinner === 'B'
+      ? report.skillBName
+      : 'tie';
+  console.log(` Overall winner: ${winner}  (${formatDiff(report.avgDiff)} avg diff)`);
+  console.log(` Tasks where ${report.skillBName} better: ${report.tasksBWon} / ${report.totalTasks}`);
+  console.log(` Tasks where ${report.skillAName} better: ${report.tasksAWon} / ${report.totalTasks}`);
+  console.log('');
+  for (const result of report.results) {
+    console.log(` ${result.taskId}  ${report.skillAName}: ${formatDiff(result.skillAScore)}  ${report.skillBName}: ${formatDiff(result.skillBScore)}  diff ${formatDiff(result.diff)}  ${formatConfidence(result.confidence)}  ${result.reasoning}`);
+  }
+  console.log(line);
+  console.log(` Runner: ${report.model} | Judge: ${report.judgeModel}`);
+  console.log(` Estimated API cost this run: $${report.estimatedCost.toFixed(3)}`);
+  console.log(line);
+}
+
 function printAssertionFailures(result: EvalTaskResult): void {
   if (result.assertionsPassed !== false) return;
   for (const failure of result.assertionFailures ?? []) {
@@ -490,6 +587,57 @@ function buildSkippedResult(taskId: string, reason: string): EvalTaskResult {
   };
 }
 
+function buildCompareTaskResult(
+  taskId: string,
+  samples: Array<{
+    skillAScore: number;
+    skillBScore: number;
+    diff: number;
+    reasoning: string;
+  }>,
+): CompareTaskResult {
+  const diffs = samples.map((sample) => sample.diff);
+  const stats = summarize(diffs);
+  return {
+    taskId,
+    skillAScore: round1(mean(samples.map((sample) => sample.skillAScore))),
+    skillBScore: round1(mean(samples.map((sample) => sample.skillBScore))),
+    diff: stats.mean,
+    confidence: samples.length === 1 ? 'UNRATED' : confidenceForRepeatedStddev(stats.stddev),
+    reasoning: samples[samples.length - 1].reasoning,
+  };
+}
+
+function buildCompareReport(
+  skillA: ParsedSkill,
+  skillB: ParsedSkill,
+  allResults: CompareResult[],
+  judged: CompareTaskResult[],
+  options: JudgeOptions,
+): CompareReport {
+  const avgDiff = round1(mean(judged.map((result) => result.diff)));
+  const tasksBWon = judged.filter((result) => result.diff >= 0.5).length;
+  const tasksAWon = judged.filter((result) => result.diff <= -0.5).length;
+  const runnerInputTokens = options.runnerInputTokens ?? sumCompareTokenField(allResults, 'inputTokens');
+  const runnerOutputTokens = options.runnerOutputTokens ?? sumCompareTokenField(allResults, 'outputTokens');
+  const runnerCost = (runnerInputTokens * 3.00 + runnerOutputTokens * 15.00) / 1_000_000;
+
+  return {
+    skillAName: skillA.name,
+    skillBName: skillB.name,
+    model: options.runnerModel ?? RUNNER_MODEL,
+    judgeModel: options.judgeModel ?? JUDGE_MODEL,
+    totalTasks: judged.length,
+    avgDiff,
+    tasksAWon,
+    tasksBWon,
+    tasksNeutral: judged.length - tasksAWon - tasksBWon,
+    overallWinner: avgDiff >= 0.5 ? 'B' : avgDiff <= -0.5 ? 'A' : 'tie',
+    results: judged,
+    estimatedCost: runnerCost,
+  };
+}
+
 export function buildEvalReportForTest(skillName: string, scoresByTask: Record<string, number[]>, runs: number): EvalReport {
   const judged = Object.entries(scoresByTask).map(([taskId, scores]) => buildJudgeResult(
     taskId,
@@ -505,6 +653,19 @@ export function buildEvalReportForTest(skillName: string, scoresByTask: Record<s
 
 function groupResultsByTask(results: ABResult[]): ABResult[][] {
   const groups = new Map<string, ABResult[]>();
+  for (const result of results) {
+    const group = groups.get(result.taskId);
+    if (group) {
+      group.push(result);
+    } else {
+      groups.set(result.taskId, [result]);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+function groupCompareResultsByTask(results: CompareResult[]): CompareResult[][] {
+  const groups = new Map<string, CompareResult[]>();
   for (const result of results) {
     const group = groups.get(result.taskId);
     if (group) {

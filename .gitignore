@@ -3,4 +3,5 @@ dist/
 *.tgz
 results.json
 test-skill/
+.skilleval/
 .env

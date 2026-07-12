@@ -1,17 +1,25 @@
 {
   "name": "@dileeppandiya/skilleval",
-  "version": "0.1.4",
-  "description": "Evaluate Claude SKILL.md files with A/B runs, task assertions, and blind LLM judges.",
+  "version": "0.2.1",
+  "description": "Measure whether Claude SKILL.md files improve outputs — blind A/B testing, deterministic assertions, run history, skill comparison, and CI gating in under 2 minutes",
   "bin": {
     "skilleval": "bin/skilleval.js"
   },
   "keywords": [
     "claude",
+    "anthropic",
+    "skill",
     "skills",
-    "eval",
     "llm",
+    "llm-evaluation",
+    "ai-agents",
+    "prompt-testing",
+    "evaluation",
     "benchmark",
-    "cli"
+    "cli",
+    "typescript",
+    "a-b-testing",
+    "ci-cd"
   ],
   "files": [
     "bin/skilleval.js",

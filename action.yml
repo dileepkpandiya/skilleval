@@ -1,0 +1,138 @@
+name: skilleval
+description: >
+  Measure whether a Claude SKILL.md file improves model outputs
+  using a blind A/B test and LLM judge.
+
+inputs:
+  skill-path:
+    description: Path to directory containing SKILL.md
+    required: true
+  tasks:
+    description: Path to tasks YAML file
+    required: false
+    default: ''
+  fail-below:
+    description: Fail if skill effectiveness is below this threshold
+    required: false
+    default: ''
+  fail-if-hurt-pct:
+    description: Fail if percentage of hurt tasks exceeds this value
+    required: false
+    default: ''
+  judge-provider:
+    description: Judge provider - gemini-flash | claude | openai
+    required: false
+    default: gemini-flash
+  runs:
+    description: Number of independent A/B runs per task
+    required: false
+    default: '1'
+  anthropic-api-key:
+    description: Anthropic API key for the runner
+    required: true
+  gemini-api-key:
+    description: Gemini API key (required if judge-provider is gemini-flash)
+    required: false
+    default: ''
+  openai-api-key:
+    description: OpenAI API key (required if judge-provider is openai)
+    required: false
+    default: ''
+
+outputs:
+  avg-diff:
+    description: Average effectiveness score diff
+    value: ${{ steps.run-skilleval.outputs.avg-diff }}
+  tasks-improved:
+    description: Number of tasks improved
+    value: ${{ steps.run-skilleval.outputs.tasks-improved }}
+  tasks-hurt:
+    description: Number of tasks hurt
+    value: ${{ steps.run-skilleval.outputs.tasks-hurt }}
+  confidence:
+    description: Overall confidence rating
+    value: ${{ steps.run-skilleval.outputs.confidence }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install skilleval
+      shell: bash
+      run: npm install -g @dileeppandiya/skilleval
+
+    - name: Run skilleval
+      shell: bash
+      id: run-skilleval
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        ARGS=("${{ inputs.skill-path }}")
+        [ -n "${{ inputs.tasks }}" ] && ARGS+=("--tasks" "${{ inputs.tasks }}")
+        [ -n "${{ inputs.fail-below }}" ] && ARGS+=("--fail-below" "${{ inputs.fail-below }}")
+        [ -n "${{ inputs.fail-if-hurt-pct }}" ] && ARGS+=("--fail-if-hurt-pct" "${{ inputs.fail-if-hurt-pct }}")
+        [ -n "${{ inputs.runs }}" ] && ARGS+=("--runs" "${{ inputs.runs }}")
+        ARGS+=("--judge-provider" "${{ inputs.judge-provider }}")
+        ARGS+=("--json")
+
+        STDOUT_FILE="${RUNNER_TEMP:-/tmp}/skilleval-output.txt"
+        STDERR_FILE="${RUNNER_TEMP:-/tmp}/skilleval-error.txt"
+        JSON_FILE="${RUNNER_TEMP:-/tmp}/skilleval-result.json"
+
+        set +e
+        skilleval "${ARGS[@]}" >"$STDOUT_FILE" 2>"$STDERR_FILE"
+        STATUS=$?
+        set -e
+
+        cat "$STDERR_FILE" >&2
+        cat "$STDOUT_FILE"
+
+        OUT_FILE="$STDOUT_FILE" JSON_FILE="$JSON_FILE" node <<'NODE'
+        const fs = require('node:fs');
+        const output = fs.readFileSync(process.env.OUT_FILE, 'utf8');
+        const start = output.indexOf('{');
+        if (start === -1) process.exit(0);
+        let depth = 0;
+        let inString = false;
+        let escaped = false;
+        for (let index = start; index < output.length; index += 1) {
+          const char = output[index];
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (char === '\\') {
+            escaped = true;
+            continue;
+          }
+          if (char === '"') {
+            inString = !inString;
+            continue;
+          }
+          if (inString) continue;
+          if (char === '{') depth += 1;
+          if (char === '}') {
+            depth -= 1;
+            if (depth === 0) {
+              fs.writeFileSync(process.env.JSON_FILE, output.slice(start, index + 1));
+              process.exit(0);
+            }
+          }
+        }
+        process.exit(0);
+        NODE
+
+        if [ -s "$JSON_FILE" ]; then
+          echo "avg-diff=$(jq -r '.avgDiff' "$JSON_FILE")" >> "$GITHUB_OUTPUT"
+          echo "tasks-improved=$(jq -r '.tasksImproved' "$JSON_FILE")" >> "$GITHUB_OUTPUT"
+          echo "tasks-hurt=$(jq -r '.tasksHurt' "$JSON_FILE")" >> "$GITHUB_OUTPUT"
+          echo "confidence=$(jq -r '.overallConfidence' "$JSON_FILE")" >> "$GITHUB_OUTPUT"
+        fi
+
+        exit "$STATUS"

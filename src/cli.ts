@@ -1,13 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { MODELS } from './config';
-import { buildMultiRunReport, judgeResults, printEvalReport, printMultiRunEvalReport, type EvalReport, type MultiRunEvalReport } from './judge';
+import { diffHistory, loadHistory, printDiffReport, saveHistory } from './history';
+import { buildMultiRunReport, judgeCompare, judgeResults, printEvalReport, printMultiRunEvalReport, type EvalReport, type MultiRunEvalReport } from './judge';
 import { createJudgeProvider, isJudgeProviderName, type JudgeProviderName } from './judges';
 import { parseSkillFile } from './parser';
-import { runAB } from './runner';
-import { loadTasksForSkill } from './tasks-loader';
+import { runAB, runABCompare } from './runner';
+import { loadTaskDefinitions, loadTasksForSkill } from './tasks-loader';
+import type { Task } from './runner';
 
 interface CliOptions {
   tasks?: string;
@@ -21,8 +23,27 @@ interface CliOptions {
   runs?: number;
   seed?: number;
   verbose?: boolean;
+  noHistory?: boolean;
   failBelow?: number;
   failIfHurtPct?: number;
+}
+
+interface CompareCliOptions {
+  tasks?: string;
+  model?: string;
+  judgeModel?: string;
+  judgeProvider: JudgeProviderName;
+  cost?: boolean;
+  json?: boolean;
+  runs?: number;
+  seed?: number;
+  verbose?: boolean;
+  fast?: boolean;
+}
+
+interface CommandWithOptions {
+  opts<T>(): T;
+  getOptionValueSource(name: string): string | undefined;
 }
 
 interface SkillevalConfig {
@@ -55,9 +76,11 @@ const COSTS_PER_MILLION = {
     },
   },
 };
+const HISTORY_DIR = '.skilleval/history';
 
 export async function main(argv = process.argv): Promise<void> {
   const { Command, Option } = await import('commander');
+  let handledSubcommand = false;
   const program = new Command()
     .name('skilleval')
     .usage('<skill-path> [options]')
@@ -72,14 +95,42 @@ export async function main(argv = process.argv): Promise<void> {
     .option('--runs <n>', 'Number of independent A/B runs per task', parseRuns, 1)
     .option('--seed <number>', 'Numeric seed for reproducible judge output ordering', parseSeed)
     .option('--verbose', 'Print debug details to stderr')
+    .option('--no-history', 'Do not save eval result history')
     .option('--fail-below <threshold>', 'Exit 1 if overall effectiveness is below threshold', parseFloatOption)
     .option('--fail-if-hurt-pct <threshold>', 'Exit 1 if percentage of hurt tasks exceeds threshold', parsePercentOption)
     .addOption(new Option('--fast').hideHelp().default(false))
     .exitOverride()
     .showHelpAfterError();
 
+  program
+    .command('diff [skill-path]')
+    .description('Show the change between the last two saved eval results')
+    .action((skillPath: string | undefined) => {
+      handledSubcommand = true;
+      runHistoryDiff(skillPath);
+    });
+
+  program
+    .command('compare <skill-a-path> <skill-b-path>')
+    .description('Compare two SKILL.md versions against the same task set')
+    .option('-t, --tasks <path>', 'Path to tasks YAML file')
+    .option('-m, --model <model>', 'Claude model for A/B runner', MODELS.runner.default)
+    .option('--judge-model <model>', 'Model for the LLM judge', MODELS.judge.default)
+    .option('--judge-provider <p>', 'Judge provider: gemini-flash | claude | openai', parseJudgeProvider, 'gemini-flash')
+    .option('--cost', 'Estimate API cost before running, ask confirmation')
+    .option('--json', 'Output comparison as JSON to stdout')
+    .option('--runs <n>', 'Number of independent compare runs per task', parseRuns, 1)
+    .option('--seed <number>', 'Numeric seed for reproducible judge output ordering', parseSeed)
+    .option('--verbose', 'Print debug details to stderr')
+    .addOption(new Option('--fast').hideHelp().default(false))
+    .action(async (skillAPath: string, skillBPath: string, command: CommandWithOptions) => {
+      handledSubcommand = true;
+      await runCompareCommand(skillAPath, skillBPath, command);
+    });
+
   try {
-    program.parse(argv);
+    await program.parseAsync(argv);
+    if (handledSubcommand) return;
 
     const skillPath = program.args[0];
     const options = program.opts<CliOptions>();
@@ -163,6 +214,13 @@ export async function main(argv = process.argv): Promise<void> {
       console.log(JSON.stringify(outputReport, null, 2));
     }
 
+    if (!options.noHistory) {
+      const historyPath = saveHistory(outputReport, HISTORY_DIR);
+      if (historyPath) {
+        console.error(`History saved to ${relative(process.cwd(), historyPath)}`);
+      }
+    }
+
     const gateResult = evaluateGate(outputReport.avgDiff, outputReport.tasksHurt, outputReport.totalTasks, thresholds);
     if (gateResult) {
       if (gateResult.passed) {
@@ -178,6 +236,91 @@ export async function main(argv = process.argv): Promise<void> {
     console.error(`Error: ${detail}`);
     process.exitCode = 2;
   }
+}
+
+function runHistoryDiff(skillPath: string | undefined): void {
+  if (!skillPath) {
+    throw new Error('Missing skill-path for diff.');
+  }
+
+  const resolved = resolve(skillPath);
+  const skill = parseSkillFile(join(resolved, 'SKILL.md'));
+  const history = loadHistory(HISTORY_DIR, skill.name);
+  if (history.length < 2) {
+    console.log('Not enough history to diff. Run skilleval at least twice.');
+    return;
+  }
+
+  const current = history[history.length - 1];
+  const previous = history[history.length - 2];
+  printDiffReport(diffHistory(current, previous));
+}
+
+async function runCompareCommand(
+  skillAPath: string,
+  skillBPath: string,
+  command: CommandWithOptions,
+): Promise<void> {
+  const options = command.opts<CompareCliOptions>();
+  const resolvedA = resolve(skillAPath);
+  const resolvedB = resolve(skillBPath);
+  const skillA = parseSkillFile(join(resolvedA, 'SKILL.md'));
+  const skillB = parseSkillFile(join(resolvedB, 'SKILL.md'));
+  const tasksFile = resolveCompareTasksFile(options.tasks, resolvedA, resolvedB);
+  const tasks = loadCompareTasks(tasksFile, skillA.name, skillB.name);
+  const fast = options.fast === true;
+  const runnerModel = fast ? MODELS.runner.dev : options.model ?? MODELS.runner.default;
+  const runs = options.runs ?? 1;
+  const judgeProviderName = options.judgeProvider;
+  const judgeModelSource = command.getOptionValueSource('judgeModel');
+  const judgeModel = fast
+    ? MODELS.judge.default
+    : defaultJudgeModel(judgeProviderName, judgeModelSource === 'default', options.judgeModel);
+
+  if (fast) {
+    console.error('[fast mode] using haiku + gemini-flash - results are indicative only');
+  }
+  if (runs === 1) {
+    console.error('⚠ Running compare with --runs 1 (default). Confidence will show as UNRATED.\nUse --runs 3 for meaningful confidence scoring.');
+  }
+  if (options.cost) {
+    const shouldProceed = await confirmCost(tasks.length, runs, runnerModel, judgeModel, judgeProviderName);
+    if (!shouldProceed) return;
+  }
+
+  const judge = createJudgeProvider(judgeProviderName);
+  validateRunnerApiKey();
+  const compareResults = await runABCompare(skillA, skillB, tasks, process.env.ANTHROPIC_API_KEY as string, {
+    model: runnerModel,
+    runs,
+  });
+  const report = await judgeCompare(skillA, skillB, compareResults, {
+    judgeProvider: judgeProviderName,
+    judge,
+    judgeModel,
+    runnerModel,
+    print: !options.json,
+    seed: options.seed,
+    verbose: options.verbose,
+  });
+
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+  }
+}
+
+function resolveCompareTasksFile(tasksOption: string | undefined, resolvedA: string, resolvedB: string): string {
+  if (tasksOption) return resolve(tasksOption);
+  const skillBTasks = join(resolvedB, 'tasks.yaml');
+  if (existsSync(skillBTasks)) return skillBTasks;
+  return join(resolvedA, 'tasks.yaml');
+}
+
+function loadCompareTasks(tasksFile: string, skillAName: string, skillBName: string): Task[] {
+  const skillNames = new Set([skillAName, skillBName]);
+  return loadTaskDefinitions(tasksFile)
+    .filter((task) => task.skillTarget === undefined || skillNames.has(task.skillTarget))
+    .map(({ id, prompt, context, assertions }) => ({ id, prompt, context, assertions }));
 }
 
 function isCommanderCleanExit(error: unknown): boolean {

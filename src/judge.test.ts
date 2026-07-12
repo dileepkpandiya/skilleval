@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildEvalReportForTest, confidenceForStddev, scoresForJudgement } from './judge';
+import { buildEvalReportForTest, confidenceForStddev, judgeCompare, scoresForJudgement } from './judge';
+import type { JudgeProvider } from './judges';
+import type { ParsedSkill } from './parser';
+import type { CompareResult } from './runner';
 
 describe('scoresForJudgement', () => {
   it('scores a max-margin with-skill win', () => {
@@ -96,3 +99,75 @@ describe('buildEvalReportForTest', () => {
     expect(report.tasksHurt).toBe(0);
   });
 });
+
+describe('judgeCompare', () => {
+  it('reports positive diff when skill B wins', async () => {
+    const judge: JudgeProvider = {
+      async score(_prompt, outputA, outputB) {
+        return {
+          winner: outputB.includes('B output') ? 'B' : 'A',
+          margin: 3,
+          rationale: 'skill B is stronger',
+        };
+      },
+    };
+
+    const report = await judgeCompare(
+      mockSkill('skill-v1'),
+      mockSkill('skill-v2'),
+      [mockCompareResult('task-001')],
+      {
+        judge,
+        judgeProvider: 'gemini-flash',
+        judgeModel: 'mock-judge',
+        runnerModel: 'mock-runner',
+        print: false,
+        seed: 1,
+      },
+    );
+
+    expect(report.skillAName).toBe('skill-v1');
+    expect(report.skillBName).toBe('skill-v2');
+    expect(report.avgDiff).toBe(3);
+    expect(report.tasksBWon).toBe(1);
+    expect(report.tasksAWon).toBe(0);
+    expect(report.overallWinner).toBe('B');
+    expect(report.results[0]).toMatchObject({
+      taskId: 'task-001',
+      skillAScore: 0,
+      skillBScore: 3,
+      diff: 3,
+      confidence: 'UNRATED',
+    });
+  });
+});
+
+function mockSkill(name: string): ParsedSkill {
+  return {
+    name,
+    description: `${name} description`,
+    triggers: ['test'],
+    instructionBody: `${name} instructions`,
+    rawPath: `/tmp/${name}/SKILL.md`,
+  };
+}
+
+function mockCompareResult(taskId: string): CompareResult {
+  return {
+    taskId,
+    prompt: 'Design an API endpoint',
+    context: 'Node.js API',
+    skillA: mockRunOutput('A output'),
+    skillB: mockRunOutput('B output'),
+  };
+}
+
+function mockRunOutput(output: string): CompareResult['skillA'] {
+  return {
+    output,
+    tokensUsed: 10,
+    inputTokens: 4,
+    outputTokens: 6,
+    latencyMs: 20,
+  };
+}
