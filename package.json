@@ -1,6 +1,6 @@
 {
   "name": "@dileeppandiya/skilleval",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Evaluate Claude SKILL.md files with A/B runs, task assertions, and blind LLM judges.",
   "bin": {
     "skilleval": "bin/skilleval.js"
